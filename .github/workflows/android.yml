@@ -14,7 +14,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # GitHub-hosted Ubuntu runners already ship with Android command-line tools.
+      # Avoid setup-android@v3, which currently attempts to install a removed 'tools' SDK package.
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
