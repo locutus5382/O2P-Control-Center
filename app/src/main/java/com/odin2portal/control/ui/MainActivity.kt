@@ -91,7 +91,7 @@ private fun ControlCenter(
                 O2PPanel(appearance) {
                     Text(snapshot.model, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Detail("Android", snapshot.androidVersion)
-                    Detail("Transport", snapshot.privilege.transport)
+                    Detail("Transport", snapshot.privilege.transport.name)
                     Detail("Privilege", if (snapshot.privilege.available) "Verified" else "Unavailable")
                     Detail("UID", snapshot.privilege.reportedUid?.toString() ?: "Not verified")
                     Text(snapshot.privilege.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
