@@ -183,7 +183,8 @@ class GameplayMonitorService : Service() {
                         foregroundLabel = app.label.ifBlank { "Not identified" },
                         attribution = app.attribution.description,
                         intervalsSaved = persistedCount.toInt(),
-                        latestSample = sample
+                        latestSample = sample,
+                        message = hudOverlay.lastError ?: current.message
                     ))
                     val elapsed = SystemClock.elapsedRealtime()
                     if (elapsed - lastNotificationAt > 12_000L) {
@@ -246,7 +247,7 @@ class GameplayMonitorService : Service() {
             Intent(this, GameplayMonitorService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        return Notification.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(title.take(60))
             .setContentText(description.take(120))
@@ -254,14 +255,15 @@ class GameplayMonitorService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .addAction(Notification.Action.Builder(
+        if (hudSettings.mode == HudDisplayMode.FLOATING_WITH_NOTIFICATION) {
+            builder.addAction(Notification.Action.Builder(
                 android.R.drawable.ic_menu_view,
                 if (hudSettings.floatingVisible) "Hide HUD" else "Show HUD", toggle
             ).build())
-            .addAction(Notification.Action.Builder(
-                android.R.drawable.ic_menu_close_clear_cancel, "Stop", stop
-            ).build())
-            .build()
+        }
+        return builder.addAction(Notification.Action.Builder(
+            android.R.drawable.ic_menu_close_clear_cancel, "Stop", stop
+        ).build()).build()
     }
 
     private fun updateNotification(title: String, description: String) {
