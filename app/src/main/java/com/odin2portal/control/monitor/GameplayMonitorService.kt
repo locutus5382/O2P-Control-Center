@@ -82,7 +82,7 @@ class GameplayMonitorService : Service() {
         if (intent?.action == ACTION_TOGGLE_HUD || intent?.action == ACTION_REFRESH_HUD) {
             if (job?.isActive == true) {
                 if (intent.action == ACTION_TOGGLE_HUD) {
-                    hudSettings.setFloatingVisible(!hudSettings.floatingVisible)
+                    hudSettings.changeFloatingVisible(!hudSettings.floatingVisible)
                 } else {
                     hudSettings.refresh()
                 }
