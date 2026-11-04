@@ -129,7 +129,10 @@ class DirectMonitor(private val app: Application) {
         val total = Parsing.memoryKb(mem, "MemTotal")
         val available = Parsing.memoryKb(mem, "MemAvailable")
         val memory = if (total != null && available != null && available in 0..total && total > 0)
-            Reading(String.format(Locale.US, "%.2f / %.2f GiB used", (total - available) / 1048576.0, total / 1048576.0), "Estimated system usage")
+            Reading(
+                String.format(Locale.US, "%.2f GiB", (total - available) / 1048576.0),
+                String.format(Locale.US, "System RAM estimate · %.2f GiB total", total / 1048576.0)
+            )
         else Reading(null, "System RAM not accessible")
         MonitorSample(System.currentTimeMillis(), mapOf(
             Metric.FPS to Reading(null, "FPS backend needs on-device layer validation"),
