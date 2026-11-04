@@ -1,0 +1,38 @@
+name: Bootstrap tracked Android sources
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/bootstrap-tracked-source.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack-sources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract original alpha archive into the source tree
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/o2p-unpack"
+          unzip -q O2P_Control_Center_Alpha_Source.zip -d "$RUNNER_TEMP/o2p-unpack"
+          test -f "$RUNNER_TEMP/o2p-unpack/O2P_Control_Center/app/build.gradle.kts"
+          # Do not overwrite newer tracked UI files or the current CI workflow.
+          rsync -a --ignore-existing --exclude='.github/' \
+            "$RUNNER_TEMP/o2p-unpack/O2P_Control_Center/" "$GITHUB_WORKSPACE/"
+          # Replace placeholder README with the original alpha project guide.
+          cp "$RUNNER_TEMP/o2p-unpack/O2P_Control_Center/README.md" README.md
+          test -f app/src/main/java/com/odin2portal/control/ui/Appearance.kt
+          test -f app/src/main/java/com/odin2portal/control/hardware/HardwareReader.kt
+      - name: Commit extracted files on a reviewable feature branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c feature/tracked-source-and-monitor
+          git add README.md .gitignore app build.gradle.kts settings.gradle.kts gradle.properties gradle docs
+          git diff --cached --quiet && { echo "Nothing to commit"; exit 0; }
+          git commit -m "chore: track Android project sources outside ZIP"
+          git push -u origin HEAD:refs/heads/feature/tracked-source-and-monitor
