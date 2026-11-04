@@ -58,6 +58,7 @@ fun GameplayPanel(
     var selectedSessionId by remember { mutableStateOf<Long?>(null) }
     var selectedRows by remember { mutableStateOf(emptyList<RecordedInterval>()) }
     var loading by remember { mutableStateOf(false) }
+    var pendingDeletion by remember { mutableStateOf<Long?>(null) }
 
     val requestNotification = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -282,17 +283,38 @@ fun GameplayPanel(
                 "Delete selected session", appearance, Modifier.fillMaxWidth(),
                 enabled = !status.running
             ) {
-                scope.launch {
-                    try {
-                        withContext(Dispatchers.IO) { db.delete(selected) }
-                        selectedSessionId = null
-                        selectedRows = emptyList()
-                        refreshHistory()
-                    } catch (e: Exception) {
-                        uiMessage = "Cannot delete session: " + (e.message ?: "storage error")
-                    }
-                }
+                pendingDeletion = selected
             }
         }
     }
+    val toDelete = pendingDeletion
+    if (toDelete != null) {
+        AlertDialog(
+            onDismissRequest = { pendingDeletion = null },
+            title = { Text("Delete recorded session?") },
+            text = { Text("This permanently deletes session " + toDelete +
+                " and its private telemetry history. It cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeletion = null
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { db.delete(toDelete) }
+                            if (selectedSessionId == toDelete) {
+                                selectedSessionId = null
+                                selectedRows = emptyList()
+                            }
+                            refreshHistory()
+                        } catch (e: Exception) {
+                            uiMessage = "Cannot delete session: " + (e.message ?: "storage error")
+                        }
+                    }
+                }) { Text("Delete permanently") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeletion = null }) { Text("Cancel") }
+            }
+        )
+    }
+
 }
