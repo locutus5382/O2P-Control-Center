@@ -70,9 +70,12 @@ private fun ControlCenter(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             O2PAction("Overview", appearance, Modifier.weight(1f), primary = page == "Overview") { page = "Overview" }
             O2PAction("Appearance", appearance, Modifier.weight(1f), primary = page == "Appearance") { page = "Appearance" }
+            O2PAction("Monitor", appearance, Modifier.weight(1f), primary = page == "Monitor") { page = "Monitor" }
         }
         if (page == "Appearance") {
             AppearancePage(appearance)
+        } else if (page == "Monitor") {
+            MonitorPanel(appearance)
         } else {
             O2PPanel(appearance) {
                 Text("HARDWARE EXPLORER", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

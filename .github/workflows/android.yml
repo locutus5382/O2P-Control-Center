@@ -2,6 +2,8 @@ name: Android debug build
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 jobs:
   build:
@@ -22,17 +24,12 @@ jobs:
           gradle-version: '8.9'
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Materialize source from initial alpha archive
-        run: |
-          unzip -q O2P_Control_Center_Alpha_Source.zip
-          test -f O2P_Control_Center/app/build.gradle.kts
-          cp app/src/main/java/com/odin2portal/control/ui/Appearance.kt O2P_Control_Center/app/src/main/java/com/odin2portal/control/ui/
-          cp app/src/main/java/com/odin2portal/control/ui/MainActivity.kt O2P_Control_Center/app/src/main/java/com/odin2portal/control/ui/
+      - name: Verify tracked Android sources
+        run: test -f app/src/main/java/com/odin2portal/control/monitor/TelemetryMonitor.kt
       - name: Unit tests and assemble debug APK
-        working-directory: O2P_Control_Center
         run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: O2P-Control-Center-debug
-          path: O2P_Control_Center/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
