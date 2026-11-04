@@ -44,7 +44,7 @@ object MonitorCsv {
         }
         val fields = listOf(
             "Window start UTC", "Window end UTC", "Configured interval seconds",
-            "App/session label", "Attribution", "Live samples in window"
+            "App/session label", "Detected package (if any)", "Attribution", "Live samples in window"
         ) + Metric.entries.flatMap { metric ->
             listOf(
                 "${metric.label} (latest)",
@@ -60,7 +60,7 @@ object MonitorCsv {
                 formatter.format(Date(row.startTimeMs)),
                 formatter.format(Date(row.endTimeMs)),
                 (row.configuredIntervalMs / 1000).toString(),
-                row.label, row.attribution.description, row.sampleCount.toString()
+                row.label, row.packageName ?: "", row.attribution.description, row.sampleCount.toString()
             ) + Metric.entries.flatMap { metric ->
                 val value = row.values[metric]
                 listOf(
