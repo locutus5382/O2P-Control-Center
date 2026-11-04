@@ -124,7 +124,7 @@ fun HudControls(appearance: AppearanceSettings) {
             Slider(value = settings.opacity, onValueChange = {
                 settings.setOpacity(it)
                 applyChanges()
-            }, valueRange = .30f..90f / 100f)
+            }, valueRange = .30f..0.90f)
             Text("HUD size  ·  " + (settings.scale * 100).toInt() + "%",
                 style = MaterialTheme.typography.labelLarge)
             Slider(value = settings.scale, onValueChange = {
