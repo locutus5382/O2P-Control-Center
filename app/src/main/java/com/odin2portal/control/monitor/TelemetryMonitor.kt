@@ -26,6 +26,7 @@ enum class Metric(val label: String, val source: String) {
     SOC_TEMP("CPU / SoC temperature", "Named thermal zone"),
     GPU_TEMP("GPU temperature", "Named GPU thermal zone"),
     BATTERY_TEMP("Battery temperature", "Android battery broadcast"),
+    BATTERY_LEVEL("Battery level", "Android battery broadcast"),
     CPU_LOAD("CPU load", "/proc/stat, sampled delta"),
     CPU_CLOCKS("CPU clocks", "cpufreq policies"),
     GPU_CLOCK("GPU clock", "KGSL devfreq"),
@@ -116,6 +117,11 @@ class DirectMonitor(private val app: Application) {
         val batteryTemp = raw?.takeIf { it in -200..1500 }?.let {
             Reading(String.format(Locale.US, "%.1f °C", it / 10.0), "Android battery broadcast")
         } ?: Reading(null, "Temperature unavailable")
+        val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        val batteryLevel = if (scale > 0 && level in 0..scale)
+            Reading("${(level * 100.0 / scale).roundToInt()}%", "Android battery broadcast")
+        else Reading(null, "Battery level unavailable")
         val now = CpuStats.parse(read("/proc/stat")?.lineSequence()?.firstOrNull())
         val cpu = CpuStats.busy(before, now)
         before = now
@@ -130,6 +136,7 @@ class DirectMonitor(private val app: Application) {
             Metric.SOC_TEMP to temp { it.contains("cpu") || it.contains("soc") || it == "ap" },
             Metric.GPU_TEMP to temp { it.contains("gpu") },
             Metric.BATTERY_TEMP to batteryTemp,
+            Metric.BATTERY_LEVEL to batteryLevel,
             Metric.CPU_LOAD to Reading(cpu?.toString()?.plus("%"), "First sample establishes a baseline"),
             Metric.CPU_CLOCKS to cpuClocks(),
             Metric.GPU_CLOCK to gpuClock(),
@@ -145,6 +152,8 @@ data class MonitorState(
     val intervalMs: Long = 2000L,
     val selected: Set<Metric> = setOf(Metric.FPS, Metric.SOC_TEMP, Metric.GPU_TEMP, Metric.BATTERY_TEMP, Metric.CPU_LOAD, Metric.CPU_CLOCKS, Metric.GPU_LOAD, Metric.RAM),
     val sample: MonitorSample? = null,
+    val recording: Boolean = false,
+    val capturedSamples: Int = 0,
     val error: String? = null
 )
 
@@ -157,6 +166,24 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     ))
     val state = data.asStateFlow()
     private var job: Job? = null
+    // Bounded, opt-in capture: never writes to storage without explicit Share.
+    // 600 rows × 11 columns generally remain well below Android's Binder intent size limit.
+    private val history = ArrayDeque<MonitorSample>()
+    private val maxCapturedSamples = 600
+
+    fun setRecording(enabled: Boolean) {
+        if (enabled && !data.value.running) return
+        if (enabled) {
+            history.clear()
+            data.value = data.value.copy(recording = true, capturedSamples = 0)
+        } else {
+            data.value = data.value.copy(recording = false)
+        }
+    }
+
+    fun exportCsv(): String? =
+        if (history.isEmpty()) null else MonitorCsv.format(history.toList())
+
     fun enable(metric: Metric, enabled: Boolean) {
         val old = data.value.selected
         data.value = data.value.copy(selected = if (enabled) old + metric else old - metric)
@@ -172,13 +199,28 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
         data.value = data.value.copy(running = true, error = null)
         job = viewModelScope.launch {
             while (isActive) {
-                try { data.value = data.value.copy(sample = collector.sample(), error = null) }
+                try {
+                    val snapshot = collector.sample()
+                    if (data.value.recording) {
+                        if (history.size >= maxCapturedSamples) history.removeFirst()
+                        history.addLast(snapshot)
+                    }
+                    data.value = data.value.copy(
+                        sample = snapshot,
+                        capturedSamples = history.size,
+                        error = null
+                    )
+                }
                 catch (e: CancellationException) { throw e }
                 catch (e: Exception) { data.value = data.value.copy(error = e.message ?: "Telemetry read failed") }
                 delay(data.value.intervalMs)
             }
         }
     }
-    fun stop() { job?.cancel(); job = null; data.value = data.value.copy(running = false) }
+    fun stop() {
+        job?.cancel()
+        job = null
+        data.value = data.value.copy(running = false, recording = false)
+    }
     override fun onCleared() { stop(); super.onCleared() }
 }
