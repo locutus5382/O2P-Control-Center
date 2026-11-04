@@ -1,7 +1,5 @@
 package com.odin2portal.control.monitor
 
-import java.util.Locale
-
 /**
  * Prepares summaries in memory. All timestamps and attribution are explicit.
  *
@@ -26,6 +24,7 @@ data class SummaryValue(
 data class RecordedInterval(
     val startTimeMs: Long,
     val endTimeMs: Long,
+    val configuredIntervalMs: Long,
     val label: String,
     val attribution: AppAttribution,
     val sampleCount: Int,
@@ -155,6 +154,7 @@ class SessionHistory(
             val row = RecordedInterval(
                 startTimeMs = start,
                 endTimeMs = end,
+                configuredIntervalMs = recordingIntervalMs,
                 label = label.ifBlank { "Not specified" },
                 attribution = attribution,
                 sampleCount = samples,
