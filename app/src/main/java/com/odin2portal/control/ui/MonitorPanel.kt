@@ -1,5 +1,7 @@
 package com.odin2portal.control.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +22,7 @@ import com.odin2portal.control.monitor.Metric
 import com.odin2portal.control.monitor.MonitorViewModel
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 
 /**
  * On-screen read-only monitor. Stops on navigation away or when Activity stops.
@@ -29,7 +32,26 @@ import java.util.Date
 fun MonitorPanel(appearance: AppearanceSettings) {
     val model: MonitorViewModel = viewModel()
     val state by model.state.collectAsState()
-    val lifecycleOwner = LocalContext.current as? LifecycleOwner
+    val context = LocalContext.current
+    val lifecycleOwner = context as? LifecycleOwner
+    var exportMessage by remember { mutableStateOf<String?>(null) }
+    val saveCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) {
+            try {
+                val csv = model.exportCsv()
+                if (csv == null) {
+                    exportMessage = "No recorded samples to save."
+                } else {
+                    val stream = context.contentResolver.openOutputStream(uri)
+                        ?: throw java.io.IOException("Destination could not be opened")
+                    stream.bufferedWriter(Charsets.UTF_8).use { it.write(csv) }
+                    exportMessage = "CSV saved successfully."
+                }
+            } catch (e: Exception) {
+                exportMessage = "CSV export failed: " + (e.message ?: "unknown error")
+            }
+        }
+    }
     DisposableEffect(model, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) model.stop()
@@ -63,6 +85,37 @@ fun MonitorPanel(appearance: AppearanceSettings) {
             }
         }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        HorizontalDivider(color = Color.White.copy(alpha = 0.14f))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Record this session", fontWeight = FontWeight.Medium)
+                Text("Optional · keeps up to 600 samples in memory; no background collection",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary)
+            }
+            Switch(
+                checked = state.recording,
+                enabled = state.running,
+                onCheckedChange = model::setRecording
+            )
+        }
+        Text("${state.capturedSamples} samples captured",
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.labelMedium)
+        O2PAction(
+            label = "Save recorded CSV",
+            settings = appearance,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.capturedSamples > 0
+        ) {
+            val fileName = "O2P_Monitor_" +
+                java.text.SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date()) + ".csv"
+            saveCsv.launch(fileName)
+        }
+        exportMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary)
+        }
         val lastSample = state.sample
         if (lastSample != null) {
             Text("Last sample: " + DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date(lastSample.timestamp)),
