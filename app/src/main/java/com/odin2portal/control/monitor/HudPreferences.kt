@@ -46,15 +46,15 @@ class HudPreferences(context: Context) {
     private inline fun <reified T : Enum<T>> enumValue(value: String?, fallback: T): T =
         enumValues<T>().firstOrNull { it.name == value } ?: fallback
 
-    fun setMode(value: HudDisplayMode) { mode = value; prefs.edit().putString("mode", value.name).apply() }
-    fun setDock(value: HudDock) { dock = value; prefs.edit().putString("dock", value.name).apply() }
-    fun setPreset(value: HudPreset) { preset = value; prefs.edit().putString("preset", value.name).apply() }
-    fun setLocked(value: Boolean) { locked = value; prefs.edit().putBoolean("locked", value).apply() }
-    fun setOpacity(value: Float) {
+    fun chooseMode(value: HudDisplayMode) { mode = value; prefs.edit().putString("mode", value.name).apply() }
+    fun chooseDock(value: HudDock) { dock = value; prefs.edit().putString("dock", value.name).apply() }
+    fun choosePreset(value: HudPreset) { preset = value; prefs.edit().putString("preset", value.name).apply() }
+    fun changeLocked(value: Boolean) { locked = value; prefs.edit().putBoolean("locked", value).apply() }
+    fun changeOpacity(value: Float) {
         opacity = value.coerceIn(.30f, .90f)
         prefs.edit().putFloat("opacity", opacity).apply()
     }
-    fun setScale(value: Float) {
+    fun changeScale(value: Float) {
         scale = value.coerceIn(.8f, 1.3f)
         prefs.edit().putFloat("scale", scale).apply()
     }
@@ -63,7 +63,7 @@ class HudPreferences(context: Context) {
         customMetrics = changed
         prefs.edit().putString("metrics", changed.joinToString(",") { it.name }).apply()
     }
-    fun setFloatingVisible(value: Boolean) {
+    fun changeFloatingVisible(value: Boolean) {
         floatingVisible = value
         prefs.edit().putBoolean("visible", value).apply()
     }
