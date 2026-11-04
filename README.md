@@ -2,7 +2,7 @@
 
 A dedicated Android performance and diagnostics project for the **AYN Odin 2 Portal Base**. The user interface offers Liquid Glass and Material-style appearance options, and the current alpha is intentionally **read-only**.
 
-## v0.2 alpha (alpha2)
+## v0.2 alpha (alpha3)
 
 ### Hardware Explorer
 - Inspect actual CPU frequency policies, GPU/KGSL nodes, named thermal zones and memory pressure.
@@ -15,7 +15,11 @@ A dedicated Android performance and diagnostics project for the **AYN Odin 2 Por
 - Select a sampling interval of 1, 2 or 5 seconds. The chosen metrics and interval are saved locally.
 - All metrics have **Unavailable** behavior for missing/blocked sensors. FPS is not implemented until a valid SurfaceFlinger per-layer source is confirmed.
 - Battery level and battery temperature are read from Android's battery broadcast (if available).
-- Optional **Record this session** toggle stores at most 600 samples in memory, and **Save recorded CSV** uses Android's file picker to write a report only when requested. Nothing is recorded unless explicitly enabled.
+- **Live sampling** remains independently selectable at 1, 2, or 5 seconds.
+- **History recording** has separate 5-second, 10-second, 30-second, or 2-minute intervals (default 10 seconds). Every stored row summarizes the available numeric readings in its window with **average, minimum, maximum**, latest value, and the count of live samples. Missing values remain unavailable.
+- At most **600 aggregate intervals** are retained in memory, not merely 600 live readings. For example, 120-second summaries cover up to 20 hours at the record limit; the oldest intervals are dropped when full, with the count shown. Sampling and retention only operate while this screen is in the foreground.
+- Optional **session/app label** (e.g. Eden) is entered manually and exported with source **User-entered label**, not presented as automatically discovered foreground process attribution. The app does **not** yet monitor while Eden is in the foreground; see [issue #6](https://github.com/locutus5382/O2P-Control-Center/issues/6).
+- **Save interval report (CSV)** uses Android's file picker to write the report only when requested, with UTC timestamps and per-record interval/source. History is in-memory and is lost if the process is killed. Nothing is recorded unless the user enables recording.
 - Monitoring only operates while the Monitor screen remains visible and the Activity is active; it stops when you leave the screen or the app goes into the background. No daemon, notification, floating HUD, or system setting writes are enabled yet.
 
 ### Appearance
