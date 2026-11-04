@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.odin2portal.control.domain.DeviceSnapshot
 import com.odin2portal.control.domain.Parsing
+import com.odin2portal.control.domain.Odin2PortalReference
 import com.odin2portal.control.domain.SensorSelection
 import com.odin2portal.control.hardware.AccessMode
 import com.odin2portal.control.monitor.GameplayRuntime
@@ -324,6 +325,22 @@ private fun DiagnosticsPage(
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
         }
     }, right = {
+        O2PPanel(appearance) {
+            Text("ODIN 2 PORTAL BASE · REFERENCE", style = MaterialTheme.typography.titleMedium)
+            Text(Odin2PortalReference.soc, color = appearance.colors.ink)
+            Odin2PortalReference.cpuFamilies.forEach { family ->
+                StatusLine(
+                    family.cores.toString() + " × " + family.name,
+                    "up to " + String.format(Locale.US, "%.1f GHz", family.advertisedMaxMHz / 1000.0),
+                    appearance
+                )
+            }
+            StatusLine("GPU", Odin2PortalReference.gpu + " · nominal 680 MHz", appearance)
+            StatusLine("Memory", Odin2PortalReference.baseRamGb.toString() + " GB LPDDR5X", appearance)
+            StatusLine("Screen", Odin2PortalReference.screen, appearance)
+            Text(Odin2PortalReference.importantWarning,
+                color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+        }
         O2PPanel(appearance) {
             Text("SENSOR LIBRARY", style = MaterialTheme.typography.titleMedium)
             val zones = snapshot?.thermals.orEmpty()
