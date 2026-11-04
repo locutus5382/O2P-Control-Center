@@ -161,6 +161,7 @@ data class MonitorState(
     val capturedSamples: Int = 0,
     val pendingSamples: Int = 0,
     val droppedRows: Long = 0,
+    val recentIntervals: List<RecordedInterval> = emptyList(),
     val error: String? = null
 )
 
@@ -194,7 +195,8 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
             recordingIntervalMs = ms,
             capturedSamples = history.rowCount,
             pendingSamples = history.pendingSampleCount,
-            droppedRows = history.droppedRows
+            droppedRows = history.droppedRows,
+            recentIntervals = history.snapshot().takeLast(3)
         )
         prefs.edit().putLong("history_interval", ms).apply()
     }
@@ -203,14 +205,15 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
         if (enabled && !data.value.running) return
         if (enabled) {
             history.reset()
-            data.value = data.value.copy(recording = true, capturedSamples = 0, pendingSamples = 0, droppedRows = 0)
+            data.value = data.value.copy(recording = true, capturedSamples = 0, pendingSamples = 0, droppedRows = 0, recentIntervals = emptyList())
         } else {
             history.closePartial()
             data.value = data.value.copy(
                 recording = false,
                 capturedSamples = history.rowCount,
                 pendingSamples = 0,
-                droppedRows = history.droppedRows
+                droppedRows = history.droppedRows,
+                recentIntervals = history.snapshot().takeLast(3)
             )
         }
     }
@@ -221,7 +224,8 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
         data.value = data.value.copy(
             capturedSamples = history.rowCount,
             pendingSamples = history.pendingSampleCount,
-            droppedRows = history.droppedRows
+            droppedRows = history.droppedRows,
+            recentIntervals = history.snapshot().takeLast(3)
         )
         return history.snapshot().takeIf { it.isNotEmpty() }?.let(MonitorCsv::formatHistory)
     }
@@ -251,6 +255,7 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
                         capturedSamples = history.rowCount,
                         pendingSamples = history.pendingSampleCount,
                         droppedRows = history.droppedRows,
+                        recentIntervals = history.snapshot().takeLast(3),
                         error = null
                     )
                 }
@@ -269,7 +274,8 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
             recording = false,
             capturedSamples = history.rowCount,
             pendingSamples = 0,
-            droppedRows = history.droppedRows
+            droppedRows = history.droppedRows,
+            recentIntervals = history.snapshot().takeLast(3)
         )
     }
     override fun onCleared() { stop(); super.onCleared() }
