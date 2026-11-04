@@ -123,14 +123,12 @@ fun HudControls(appearance: AppearanceSettings) {
                 style = MaterialTheme.typography.labelLarge)
             Slider(value = settings.opacity, onValueChange = {
                 settings.changeOpacity(it)
-                applyChanges()
-            }, valueRange = .30f..0.90f)
+            }, valueRange = .30f..0.90f, onValueChangeFinished = { applyChanges() })
             Text("HUD size  ·  " + (settings.scale * 100).toInt() + "%",
                 style = MaterialTheme.typography.labelLarge)
             Slider(value = settings.scale, onValueChange = {
                 settings.changeScale(it)
-                applyChanges()
-            }, valueRange = .8f..1.3f)
+            }, valueRange = .8f..1.3f, onValueChangeFinished = { applyChanges() })
             if (session.running) {
                 O2PAction(if (settings.floatingVisible) "Hide floating HUD" else "Show floating HUD",
                     appearance, Modifier.fillMaxWidth()) {
