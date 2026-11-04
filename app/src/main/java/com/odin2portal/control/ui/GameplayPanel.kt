@@ -117,176 +117,166 @@ fun GameplayPanel(
     }
     LaunchedEffect(status.running, status.starting, status.intervalsSaved) { refreshHistory() }
 
-    O2PPanel(appearance) {
-        Text("GAMEPLAY RECORDING", style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold)
-        Text(
-            "Start here, switch to Eden or another game, and stop from the notification or this screen. The service collects read-only device measurements.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary
-        )
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            Text("Background monitor", fontWeight = FontWeight.SemiBold)
-            Text(
-                when {
-                    status.starting -> "Starting"
-                    status.running -> "RECORDING"
-                    else -> "Off"
-                },
-                color = if (status.running) Color(0xFF9DE1B0) else MaterialTheme.colorScheme.secondary,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-
-        if (!permissionGranted) {
-            Text(
-                "Usage Access is not enabled. Recording is still possible, but app labels will be manually entered or unknown, not automatically detected.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary
-            )
-            O2PAction("Grant Usage Access in Android Settings", appearance, Modifier.fillMaxWidth()) {
-                try { context.startActivity(detector.usageAccessSettingsIntent()) }
-                catch (e: Exception) { uiMessage = "Cannot open Usage Access settings: " + e.message }
-            }
-        } else {
-            Text("Foreground app detection: Android Usage Access enabled",
-                style = MaterialTheme.typography.bodySmall, color = Color(0xFF9DE1B0))
-        }
-
-        if (!notificationGranted) {
-            Text("Notifications are needed for an ongoing visible session and a Stop control.",
-                style = MaterialTheme.typography.bodySmall)
-            O2PAction("Allow monitor notifications", appearance, Modifier.fillMaxWidth()) {
-                if (Build.VERSION.SDK_INT >= 33)
-                    requestNotification.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-
-        if (status.running || status.starting) {
-            Text("Active app: " + status.foregroundLabel, fontWeight = FontWeight.SemiBold)
-            Text("Identification: " + status.attribution, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary)
-            val soc = status.latestSample?.get(Metric.SOC_TEMP)?.display ?: "Unavailable"
-            val battery = status.latestSample?.get(Metric.BATTERY_TEMP)?.display ?: "Unavailable"
-            Text("SoC " + soc + "   ·   Battery " + battery,
-                style = MaterialTheme.typography.bodyMedium)
-            Text("Saved intervals: " + status.intervalsSaved,
-                style = MaterialTheme.typography.bodyMedium)
-            O2PAction("Stop gameplay recording", appearance, Modifier.fillMaxWidth(), primary = true) {
-                context.startService(Intent(context, GameplayMonitorService::class.java)
-                    .setAction(GameplayMonitorService.ACTION_STOP))
-            }
-        } else {
-            O2PAction(
-                "Start gameplay recording", appearance, Modifier.fillMaxWidth(),
-                primary = true, enabled = notificationGranted
-            ) {
-                onBegin() // stop the competing on-screen sampler first
-                try {
-                    val intent = Intent(context, GameplayMonitorService::class.java)
-                        .setAction(GameplayMonitorService.ACTION_START)
-                        .putExtra(GameplayMonitorService.EXTRA_SAMPLE_MS, sampleMs)
-                        .putExtra(GameplayMonitorService.EXTRA_HISTORY_MS, recordMs)
-                        .putExtra(GameplayMonitorService.EXTRA_LABEL, manualLabel.trim().take(64))
-                    context.startForegroundService(intent)
-                    uiMessage = "Start requested. Check the recording status before opening the game."
-                } catch (e: Exception) {
-                    uiMessage = "Unable to start: " + (e.message ?: "foreground service error")
+    O2PColumns(left = {
+        O2PPanel(appearance) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("GAMEPLAY RECORDER", style = MaterialTheme.typography.titleMedium)
+                    Text("Read-only measurements while Eden or another game is open",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = appearance.colors.muted)
                 }
+                Text(if (status.running) "●  REC" else if (status.starting) "Starting..." else "●  Idle",
+                    color = if (status.running) Color(0xFF35BA76) else appearance.colors.muted,
+                    style = MaterialTheme.typography.labelLarge)
             }
-        }
-        status.message?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary)
-        }
-        uiMessage?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary)
-        }
-    }
+            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                MetricTile(appearance, "CPU",
+                    status.latestSample?.get(Metric.SOC_TEMP)?.display ?: "—",
+                    "Peak reported sensor", Modifier.weight(1f))
+                MetricTile(appearance, "GPU",
+                    status.latestSample?.get(Metric.GPU_TEMP)?.display ?: "—",
+                    "Peak reported sensor", Modifier.weight(1f))
+            }
+            StatusLine("Active app",
+                if (status.running) status.foregroundLabel else "None", appearance)
+            StatusLine("App identification", if (status.running) status.attribution else "Inactive",
+                appearance)
+            StatusLine("Saved history intervals", status.intervalsSaved.toString(), appearance)
 
-    Spacer(Modifier.height(12.dp))
-    O2PPanel(appearance) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("SAVED GAMEPLAY SESSIONS", style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            O2PAction("Refresh", appearance) { refreshHistory() }
-        }
-        Text("Stored locally · last 20 sessions retained · automatic app attribution requires Usage Access.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-        if (sessions.isEmpty()) {
-            Text("No recorded sessions yet.")
-        }
-        sessions.forEach { session ->
-            HorizontalDivider(color = Color.White.copy(alpha = 0.13f))
-            Text(
-                (session.manualLabel.ifBlank { "Gameplay session" }) + " · " +
-                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-                        .format(Date(session.startedAt)),
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(session.status + " · " + session.intervalCount + " stored intervals · every " +
-                (session.recordIntervalMs / 1000L) + "s",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary)
-            O2PAction(
-                "View session " + session.id,
-                appearance, Modifier.fillMaxWidth(),
-                enabled = !loading
-            ) {
-                loading = true
-                scope.launch {
+            if (status.running || status.starting) {
+                O2PAction("Stop recording", appearance, Modifier.fillMaxWidth(), primary = true) {
+                    context.startService(Intent(context, GameplayMonitorService::class.java)
+                        .setAction(GameplayMonitorService.ACTION_STOP))
+                }
+            } else {
+                O2PAction("Start gameplay session", appearance, Modifier.fillMaxWidth(),
+                    primary = true, enabled = notificationGranted) {
+                    onBegin()
                     try {
-                        selectedRows = withContext(Dispatchers.IO) { db.read(session.id) }
-                        selectedSessionId = session.id
+                        val intent = Intent(context, GameplayMonitorService::class.java)
+                            .setAction(GameplayMonitorService.ACTION_START)
+                            .putExtra(GameplayMonitorService.EXTRA_SAMPLE_MS, sampleMs)
+                            .putExtra(GameplayMonitorService.EXTRA_HISTORY_MS, recordMs)
+                            .putExtra(GameplayMonitorService.EXTRA_LABEL, manualLabel.trim().take(64))
+                        context.startForegroundService(intent)
+                        uiMessage = "Start requested. Check the notification before opening the game."
                     } catch (e: Exception) {
-                        uiMessage = "Unable to read session: " + (e.message ?: "storage error")
-                    } finally { loading = false }
+                        uiMessage = "Unable to start: " + (e.message ?: "foreground service error")
+                    }
+                }
+            }
+            Text("Select live and history intervals in Monitor before starting.",
+                style = MaterialTheme.typography.bodySmall,
+                color = appearance.colors.muted)
+            status.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            uiMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+        O2PPanel(appearance) {
+            Text("PRIVACY & ACCESS", style = MaterialTheme.typography.titleMedium)
+            StatusLine("Android Usage Access",
+                if (permissionGranted) "Granted" else "Not granted", appearance)
+            StatusLine("Notifications",
+                if (notificationGranted) "Allowed" else "Required", appearance)
+            if (!permissionGranted) {
+                Text("Grant Usage Access to identify the foreground app. Without it, labels are manual or unknown.",
+                    color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+                O2PAction("Open Usage Access settings", appearance, Modifier.fillMaxWidth()) {
+                    try { context.startActivity(detector.usageAccessSettingsIntent()) }
+                    catch (e: Exception) { uiMessage = "Could not open Usage Access settings" }
+                }
+            }
+            if (!notificationGranted) {
+                Text("A visible notification with Stop action is required.",
+                    color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+                O2PAction("Allow notifications", appearance, Modifier.fillMaxWidth()) {
+                    if (Build.VERSION.SDK_INT >= 33)
+                        requestNotification.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+            Text("Nothing uploads automatically. History stays on this device. No CPU/GPU tuning or fan changes.",
+                color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+        }
+    }, right = {
+        O2PPanel(appearance) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("SESSION HISTORY", style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f))
+                O2PAction("Refresh", appearance) { refreshHistory() }
+            }
+            Text("Last 20 sessions stored locally. Choose one to see the identified apps and export its data.",
+                style = MaterialTheme.typography.bodySmall,
+                color = appearance.colors.muted)
+            if (sessions.isEmpty()) Text("No sessions recorded yet.",
+                color = appearance.colors.muted)
+            sessions.take(12).forEach { session ->
+                HorizontalDivider(color = appearance.colors.outline)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(session.manualLabel.ifBlank { "Gameplay session" },
+                            fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(
+                            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                                .format(Date(session.startedAt)) + "  ·  " + session.intervalCount +
+                                " intervals  ·  " + session.status,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = appearance.colors.muted
+                        )
+                    }
+                    O2PAction("Open", appearance, enabled = !loading) {
+                        loading = true
+                        scope.launch {
+                            try {
+                                selectedRows = withContext(Dispatchers.IO) { db.read(session.id) }
+                                selectedSessionId = session.id
+                            } catch (e: Exception) {
+                                uiMessage = "Unable to read session: " +
+                                    (e.message ?: "storage error")
+                            } finally { loading = false }
+                        }
+                    }
                 }
             }
         }
-
         val selected = selectedSessionId
         if (selected != null) {
-            HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
-            Text("SELECTED SESSION " + selected, fontWeight = FontWeight.SemiBold)
-            Text(selectedRows.size.toString() + " intervals loaded",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary)
-            // Do not imply one app when the player switched apps during the session.
-            val packages = selectedRows.mapNotNull { row ->
-                row.packageName?.let { row.label + " (" + it + ")" }
-            }.distinct().take(5)
-            Text(
-                if (packages.isEmpty()) "Detected foreground apps: Unavailable (manual labels only)"
-                else "Detected foreground apps: " + packages.joinToString(", "),
-                style = MaterialTheme.typography.bodySmall
-            )
-            val soc = selectedRows.mapNotNull { it.values[Metric.SOC_TEMP]?.average }
-            val peak = selectedRows.mapNotNull { it.values[Metric.SOC_TEMP]?.maximum }.maxOrNull()
-            if (soc.isNotEmpty()) {
+            O2PPanel(appearance) {
+                Text("SELECTED SESSION  /  " + selected, style = MaterialTheme.typography.titleMedium)
+                Text(selectedRows.size.toString() + " aggregated intervals",
+                    color = appearance.colors.muted)
+                val packages = selectedRows.mapNotNull { row ->
+                    row.packageName?.let { row.label + " (" + it + ")" }
+                }.distinct().take(4)
                 Text(
-                    "Average SoC: " + String.format(Locale.US, "%.1f °C", soc.average()) +
-                        " · Peak observed: " + String.format(Locale.US, "%.1f °C", peak),
-                    style = MaterialTheme.typography.bodyMedium
+                    if (packages.isEmpty()) "Foreground app: not automatically identified"
+                    else "Detected apps: " + packages.joinToString(", "),
+                    style = MaterialTheme.typography.bodySmall
                 )
-            }
-            O2PAction(
-                "Export selected session CSV", appearance, Modifier.fillMaxWidth(),
-                enabled = selectedRows.isNotEmpty()
-            ) {
-                val file = "O2P_Gameplay_" + selected + "_" +
-                    SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date()) + ".csv"
-                createReport.launch(file)
-            }
-            O2PAction(
-                "Delete selected session", appearance, Modifier.fillMaxWidth(),
-                enabled = !status.running
-            ) {
-                pendingDeletion = selected
+                val soc = selectedRows.mapNotNull {
+                    it.values[Metric.SOC_TEMP]?.average
+                }
+                val peak = selectedRows.mapNotNull {
+                    it.values[Metric.SOC_TEMP]?.maximum
+                }.maxOrNull()
+                if (soc.isNotEmpty()) {
+                    StatusLine("CPU sensor average",
+                        String.format(Locale.US, "%.1f °C", soc.average()), appearance)
+                    StatusLine("Peak CPU sensor",
+                        if (peak == null) "—" else
+                            String.format(Locale.US, "%.1f °C", peak), appearance)
+                }
+                O2PAction("Export CSV", appearance, Modifier.fillMaxWidth(),
+                    primary = true, enabled = selectedRows.isNotEmpty()) {
+                    val file = "O2P_Gameplay_" + selected + "_" +
+                        SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date()) + ".csv"
+                    createReport.launch(file)
+                }
+                O2PAction("Delete session", appearance, Modifier.fillMaxWidth(),
+                    enabled = !status.running) { pendingDeletion = selected }
             }
         }
-    }
+    })
     val toDelete = pendingDeletion
     if (toDelete != null) {
         AlertDialog(
