@@ -1,0 +1,184 @@
+package com.odin2portal.control.monitor
+
+import android.app.Application
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.odin2portal.control.domain.Parsing
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.Locale
+import kotlin.math.roundToInt
+
+/** Read-only on-demand telemetry. No root, daemon, kernel writes, or boot receiver. */
+enum class Metric(val label: String, val source: String) {
+    FPS("Presented FPS", "Needs validated per-layer SurfaceFlinger access"),
+    SOC_TEMP("CPU / SoC temperature", "Named thermal zone"),
+    GPU_TEMP("GPU temperature", "Named GPU thermal zone"),
+    BATTERY_TEMP("Battery temperature", "Android battery broadcast"),
+    CPU_LOAD("CPU load", "/proc/stat, sampled delta"),
+    CPU_CLOCKS("CPU clocks", "cpufreq policies"),
+    GPU_CLOCK("GPU clock", "KGSL devfreq"),
+    GPU_LOAD("GPU load", "KGSL utilization"),
+    RAM("System RAM", "/proc/meminfo"),
+    FAN_RPM("Fan RPM", "hwmon tachometer if available")
+}
+data class Reading(val value: String?, val detail: String = "") {
+    val display: String get() = value ?: "Unavailable"
+}
+data class MonitorSample(val timestamp: Long, val readings: Map<Metric, Reading>) {
+    fun get(metric: Metric): Reading = readings[metric] ?: Reading(null)
+}
+object CpuStats {
+    data class Times(val idle: Long, val total: Long)
+    fun parse(raw: String?): Times? {
+        val fields = raw?.trim()?.split(Regex("\\s+")) ?: return null
+        if (fields.firstOrNull() != "cpu" || fields.size < 5) return null
+        val v = fields.drop(1).map { it.toLongOrNull() ?: return null }
+        if (v.any { it < 0L }) return null
+        return Times(v[3] + v.getOrElse(4) { 0L }, v.sum())
+    }
+    fun busy(before: Times?, after: Times?): Int? {
+        if (before == null || after == null) return null
+        val dTotal = after.total - before.total
+        val dIdle = after.idle - before.idle
+        if (dTotal <= 0L || dIdle < 0L || dIdle > dTotal) return null
+        return ((dTotal - dIdle) * 100.0 / dTotal).roundToInt().coerceIn(0, 100)
+    }
+}
+
+class DirectMonitor(private val app: Application) {
+    private var before: CpuStats.Times? = null
+    private fun read(path: String): String? = try {
+        File(path).takeIf { it.isFile && it.canRead() }?.bufferedReader()?.use { it.readText().trim().take(8192) }
+    } catch (_: Exception) { null }
+    private fun temp(accept: (String) -> Boolean): Reading {
+        val zones = File("/sys/class/thermal").listFiles()?.filter { it.name.matches(Regex("thermal_zone\\d+")) }?.take(128).orEmpty()
+        for (zone in zones) {
+            val name = read(zone.path + "/type") ?: continue
+            if (!accept(name.lowercase(Locale.ROOT))) continue
+            val degrees = Parsing.temperatureC(read(zone.path + "/temp")) ?: continue
+            return Reading(String.format(Locale.US, "%.1f °C", degrees), "Sensor: " + name)
+        }
+        return Reading(null, "No matching readable sensor")
+    }
+    private fun cpuClocks(): Reading {
+        val policies = File("/sys/devices/system/cpu/cpufreq").listFiles()
+            ?.filter { it.name.matches(Regex("policy\\d+")) }
+            ?.sortedBy { it.name.removePrefix("policy").toIntOrNull() ?: Int.MAX_VALUE }
+            ?.take(12).orEmpty()
+        val observed = policies.mapNotNull { policy ->
+            val khz = read(policy.path + "/scaling_cur_freq")?.toLongOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+            policy.name + ": " + String.format(Locale.US, "%.2f GHz", khz / 1_000_000.0)
+        }
+        return if (observed.isEmpty()) Reading(null, "Frequency policies not accessible")
+        else Reading(observed.joinToString(" · "), "Reported scaling_cur_freq")
+    }
+    private fun gpuClock(): Reading {
+        val root = "/sys/class/kgsl/kgsl-3d0/"
+        for (suffix in listOf("devfreq/cur_freq", "gpuclk")) {
+            val value = read(root + suffix)?.toLongOrNull()?.takeIf { it > 0 } ?: continue
+            val mhz = if (value > 2_000_000) value / 1_000_000.0 else value / 1000.0
+            return Reading(String.format(Locale.US, "%.0f MHz", mhz), suffix)
+        }
+        return Reading(null, "GPU clock not accessible")
+    }
+    private fun gpuLoad(): Reading {
+        val root = "/sys/class/kgsl/kgsl-3d0/"
+        read(root + "gpu_busy_percentage")?.toIntOrNull()?.takeIf { it in 0..100 }?.let {
+            return Reading(it.toString() + "%", "gpu_busy_percentage")
+        }
+        val ticks = read(root + "gpubusy")?.split(Regex("\\s+"))?.mapNotNull { it.toLongOrNull() }.orEmpty()
+        if (ticks.size >= 2 && ticks[1] > 0 && ticks[0] in 0..ticks[1])
+            return Reading((ticks[0] * 100.0 / ticks[1]).roundToInt().toString() + "%", "gpubusy busy/total ticks")
+        return Reading(null, "GPU utilization not accessible")
+    }
+    private fun fanRpm(): Reading {
+        for (hwmon in File("/sys/class/hwmon").listFiles()?.take(32).orEmpty()) for (i in 1..4) {
+            val rpm = read(hwmon.path + "/fan" + i + "_input")?.toIntOrNull()
+            if (rpm != null && rpm in 0..50000) return Reading(rpm.toString() + " RPM", hwmon.name + "/fan" + i + "_input")
+        }
+        return Reading(null, "No tachometer; PWM is not RPM")
+    }
+    suspend fun sample(): MonitorSample = withContext(Dispatchers.IO) {
+        val battery: Intent? = app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val raw = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+        val batteryTemp = raw?.takeIf { it in -200..1500 }?.let {
+            Reading(String.format(Locale.US, "%.1f °C", it / 10.0), "Android battery broadcast")
+        } ?: Reading(null, "Temperature unavailable")
+        val now = CpuStats.parse(read("/proc/stat")?.lineSequence()?.firstOrNull())
+        val cpu = CpuStats.busy(before, now)
+        before = now
+        val mem = read("/proc/meminfo")
+        val total = Parsing.memoryKb(mem, "MemTotal")
+        val available = Parsing.memoryKb(mem, "MemAvailable")
+        val memory = if (total != null && available != null && available in 0..total && total > 0)
+            Reading(String.format(Locale.US, "%.2f / %.2f GiB used", (total - available) / 1048576.0, total / 1048576.0), "Estimated system usage")
+        else Reading(null, "System RAM not accessible")
+        MonitorSample(System.currentTimeMillis(), mapOf(
+            Metric.FPS to Reading(null, "FPS backend needs on-device layer validation"),
+            Metric.SOC_TEMP to temp { it.contains("cpu") || it.contains("soc") || it == "ap" },
+            Metric.GPU_TEMP to temp { it.contains("gpu") },
+            Metric.BATTERY_TEMP to batteryTemp,
+            Metric.CPU_LOAD to Reading(cpu?.toString()?.plus("%"), "First sample establishes a baseline"),
+            Metric.CPU_CLOCKS to cpuClocks(),
+            Metric.GPU_CLOCK to gpuClock(),
+            Metric.GPU_LOAD to gpuLoad(),
+            Metric.RAM to memory,
+            Metric.FAN_RPM to fanRpm()
+        ))
+    }
+}
+
+data class MonitorState(
+    val running: Boolean = false,
+    val intervalMs: Long = 2000L,
+    val selected: Set<Metric> = setOf(Metric.FPS, Metric.SOC_TEMP, Metric.GPU_TEMP, Metric.BATTERY_TEMP, Metric.CPU_LOAD, Metric.CPU_CLOCKS, Metric.GPU_LOAD, Metric.RAM),
+    val sample: MonitorSample? = null,
+    val error: String? = null
+)
+
+class MonitorViewModel(app: Application) : AndroidViewModel(app) {
+    private val prefs = app.getSharedPreferences("monitor", 0)
+    private val collector = DirectMonitor(app)
+    private val data = MutableStateFlow(MonitorState(
+        selected = Metric.entries.filter { prefs.getBoolean("show_" + it.name, it in MonitorState().selected) }.toSet(),
+        intervalMs = prefs.getLong("interval", 2000L).coerceIn(1000L, 5000L)
+    ))
+    val state = data.asStateFlow()
+    private var job: Job? = null
+    fun enable(metric: Metric, enabled: Boolean) {
+        val old = data.value.selected
+        data.value = data.value.copy(selected = if (enabled) old + metric else old - metric)
+        prefs.edit().putBoolean("show_" + metric.name, enabled).apply()
+    }
+    fun interval(ms: Long) {
+        if (ms !in listOf(1000L, 2000L, 5000L)) return
+        data.value = data.value.copy(intervalMs = ms)
+        prefs.edit().putLong("interval", ms).apply()
+    }
+    fun start() {
+        if (job?.isActive == true) return
+        data.value = data.value.copy(running = true, error = null)
+        job = viewModelScope.launch {
+            while (isActive) {
+                try { data.value = data.value.copy(sample = collector.sample(), error = null) }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) { data.value = data.value.copy(error = e.message ?: "Telemetry read failed") }
+                delay(data.value.intervalMs)
+            }
+        }
+    }
+    fun stop() { job?.cancel(); job = null; data.value = data.value.copy(running = false) }
+    override fun onCleared() { stop(); super.onCleared() }
+}
