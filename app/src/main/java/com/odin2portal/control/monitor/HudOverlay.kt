@@ -1,6 +1,8 @@
 package com.odin2portal.control.monitor
 
 import android.content.Context
+import android.app.KeyguardManager
+import android.os.PowerManager
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -26,6 +28,8 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
     private var readout: TextView? = null
     private var params: WindowManager.LayoutParams? = null
     private var lastSample: MonitorSample? = null
+    private var dragging = false
+    private var headerText: TextView? = null
     var lastError: String? = null
         private set
 
@@ -34,7 +38,9 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
 
     private fun canShow() = Settings.canDrawOverlays(context) &&
         settings.mode == HudDisplayMode.FLOATING_WITH_NOTIFICATION &&
-        settings.floatingVisible
+        settings.floatingVisible &&
+        context.getSystemService(PowerManager::class.java)?.isInteractive != false &&
+        context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked != true
 
     fun render(sample: MonitorSample?) {
         lastSample = sample
@@ -51,7 +57,7 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
                 selected.joinToString("\n") { metric ->
                     metric.label + "   " + (sample?.get(metric)?.display ?: "—")
                 }
-            container?.post { reposition() }
+            container?.post { if (!dragging) reposition() }
             lastError = null
         } catch (e: Exception) {
             lastError = "HUD unavailable: " + (e.message ?: "window error")
@@ -86,6 +92,7 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
         }
         outer.addView(header)
         outer.addView(content)
+        headerText = header
         readout = content
 
         var touchStartX = 0f
@@ -97,6 +104,7 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
             val lp = params ?: return@setOnTouchListener false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    dragging = true
                     touchStartX = event.rawX
                     touchStartY = event.rawY
                     initialX = lp.x
@@ -118,6 +126,7 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    dragging = false
                     val b = wm.currentWindowMetrics.bounds
                     val maxX = (b.width() - outer.width - dp(12)).coerceAtLeast(1)
                     val maxY = (b.height() - outer.height - dp(12)).coerceAtLeast(1)
@@ -159,7 +168,7 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
         val scale = settings.scale
         val base = dp(11).toFloat() / density
         readout?.textSize = base * scale
-        view.findViewById<TextView>(android.R.id.text1)?.textSize = 10f * scale
+        headerText?.textSize = 10f * scale
         wm.updateViewLayout(view, lp)
     }
 
@@ -187,6 +196,8 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
         container = null
         params = null
         readout = null
+        headerText = null
+        dragging = false
         if (view != null) runCatching { wm.removeViewImmediate(view) }
     }
 }
