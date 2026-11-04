@@ -153,7 +153,11 @@ data class MonitorState(
     val selected: Set<Metric> = setOf(Metric.FPS, Metric.SOC_TEMP, Metric.GPU_TEMP, Metric.BATTERY_TEMP, Metric.CPU_LOAD, Metric.CPU_CLOCKS, Metric.GPU_LOAD, Metric.RAM),
     val sample: MonitorSample? = null,
     val recording: Boolean = false,
+    val recordingIntervalMs: Long = RecordingIntervals.defaultMs,
+    val sessionLabel: String = "",
     val capturedSamples: Int = 0,
+    val pendingSamples: Int = 0,
+    val droppedRows: Long = 0,
     val error: String? = null
 )
 
@@ -162,27 +166,62 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     private val collector = DirectMonitor(app)
     private val data = MutableStateFlow(MonitorState(
         selected = Metric.entries.filter { prefs.getBoolean("show_" + it.name, it in MonitorState().selected) }.toSet(),
-        intervalMs = prefs.getLong("interval", 2000L).coerceIn(1000L, 5000L)
+        intervalMs = prefs.getLong("interval", 2000L).coerceIn(1000L, 5000L),
+        recordingIntervalMs = prefs.getLong("history_interval", RecordingIntervals.defaultMs)
+            .takeIf(RecordingIntervals::valid) ?: RecordingIntervals.defaultMs,
+        sessionLabel = prefs.getString("session_label", "")?.take(64) ?: ""
     ))
     val state = data.asStateFlow()
     private var job: Job? = null
-    // Bounded, opt-in capture: never writes to storage without explicit Share.
-    // 600 rows × 11 columns generally remain well below Android's Binder intent size limit.
-    private val history = ArrayDeque<MonitorSample>()
-    private val maxCapturedSamples = 600
+    // 600 aggregated intervals maximum, not 600 raw polling events.
+    // History remains in RAM until a new recording begins or ViewModel is destroyed.
+    private val history = SessionHistory(data.value.recordingIntervalMs)
+
+    fun setSessionLabel(label: String) {
+        if (data.value.recording) return
+        val safe = label.take(64).replace("\\n", " ").replace("\\r", " ")
+        data.value = data.value.copy(sessionLabel = safe)
+        prefs.edit().putString("session_label", safe).apply()
+    }
+
+    fun setRecordingInterval(ms: Long) {
+        if (!RecordingIntervals.valid(ms)) return
+        history.interval(ms) // closes any partial window before changing interval
+        data.value = data.value.copy(
+            recordingIntervalMs = ms,
+            capturedSamples = history.rowCount,
+            pendingSamples = history.pendingSampleCount,
+            droppedRows = history.droppedRows
+        )
+        prefs.edit().putLong("history_interval", ms).apply()
+    }
 
     fun setRecording(enabled: Boolean) {
         if (enabled && !data.value.running) return
         if (enabled) {
-            history.clear()
-            data.value = data.value.copy(recording = true, capturedSamples = 0)
+            history.reset()
+            data.value = data.value.copy(recording = true, capturedSamples = 0, pendingSamples = 0, droppedRows = 0)
         } else {
-            data.value = data.value.copy(recording = false)
+            history.closePartial()
+            data.value = data.value.copy(
+                recording = false,
+                capturedSamples = history.rowCount,
+                pendingSamples = 0,
+                droppedRows = history.droppedRows
+            )
         }
     }
 
-    fun exportCsv(): String? =
-        if (history.isEmpty()) null else MonitorCsv.format(history.toList())
+    /** Explicit export only: users choose a destination through Android's file picker. */
+    fun exportCsv(): String? {
+        if (data.value.recording) history.closePartial()
+        data.value = data.value.copy(
+            capturedSamples = history.rowCount,
+            pendingSamples = history.pendingSampleCount,
+            droppedRows = history.droppedRows
+        )
+        return history.snapshot().takeIf { it.isNotEmpty() }?.let(MonitorCsv::formatHistory)
+    }
 
     fun enable(metric: Metric, enabled: Boolean) {
         val old = data.value.selected
@@ -202,12 +241,13 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
                 try {
                     val snapshot = collector.sample()
                     if (data.value.recording) {
-                        if (history.size >= maxCapturedSamples) history.removeFirst()
-                        history.addLast(snapshot)
+                        history.offer(snapshot, data.value.sessionLabel)
                     }
                     data.value = data.value.copy(
                         sample = snapshot,
-                        capturedSamples = history.size,
+                        capturedSamples = history.rowCount,
+                        pendingSamples = history.pendingSampleCount,
+                        droppedRows = history.droppedRows,
                         error = null
                     )
                 }
@@ -220,7 +260,14 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     fun stop() {
         job?.cancel()
         job = null
-        data.value = data.value.copy(running = false, recording = false)
+        if (data.value.recording) history.closePartial()
+        data.value = data.value.copy(
+            running = false,
+            recording = false,
+            capturedSamples = history.rowCount,
+            pendingSamples = 0,
+            droppedRows = history.droppedRows
+        )
     }
     override fun onCleared() { stop(); super.onCleared() }
 }
