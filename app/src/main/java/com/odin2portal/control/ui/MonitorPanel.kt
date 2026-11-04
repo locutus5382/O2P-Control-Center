@@ -64,9 +64,17 @@ fun MonitorPanel(appearance: AppearanceSettings) {
         }
     }
 
+    GameplayPanel(
+        appearance = appearance,
+        onBegin = model::stop,
+        sampleMs = state.intervalMs,
+        recordMs = state.recordingIntervalMs,
+        manualLabel = state.sessionLabel
+    )
+    Spacer(Modifier.height(12.dp))
     O2PPanel(appearance) {
-        Text("PERFORMANCE MONITOR", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("Read-only alpha · No hardware tuning, overlay, or background service",
+        Text("ON-SCREEN LIVE MONITOR", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Read-only sampler while this screen is visible · gameplay recorder above is independent",
             color = MaterialTheme.colorScheme.secondary,
             style = MaterialTheme.typography.bodySmall)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -223,7 +231,7 @@ fun MonitorPanel(appearance: AppearanceSettings) {
     Spacer(Modifier.height(12.dp))
     O2PPanel(appearance) {
         Text("IN-GAME HUD", fontWeight = FontWeight.SemiBold)
-        Text("Movable overlay, persistent notification and validated per-game FPS are planned for later releases. They are not active in this build.",
+        Text("A movable gameplay overlay and validated per-game FPS are planned for later releases. Background gameplay recording and its notification are available above.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
     }
 }

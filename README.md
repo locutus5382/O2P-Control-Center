@@ -2,6 +2,16 @@
 
 A dedicated Android performance and diagnostics project for the **AYN Odin 2 Portal Base**. The user interface offers Liquid Glass and Material-style appearance options, and the current alpha is intentionally **read-only**.
 
+## v0.3 gameplay recording (draft)
+
+- **Start gameplay recording** from the Monitor screen, then open Eden or another game. A user-started Android foreground service captures read-only system telemetry after O2P leaves the foreground.
+- The Android notification includes a **Stop** action. Android 13+ notification permission is required for a visible, easily stopped session; Android's `specialUse` FGS type is declared for this non-media, non-health use case.
+- **Usage Access** is optional and requested explicitly from Android Settings. If granted, Android activity-resume events can identify foreground app **packages** (e.g., Eden), with the source recorded in each interval. Without it, any label is *manual/unverified*. This does not identify the game running inside an emulator.
+- Sessions use independent **1/2/5-second live sampling** and **5/10/30/120-second history summaries**, persist locally in an app-private SQLite database, and can be reviewed, exported to CSV, and deleted with confirmation.
+- Storage is bounded to the last 20 sessions and the newest 5,000 intervals per session. **No recording begins without a user action**, and the service never runs at boot.
+- Gameplay recording currently uses **Direct** sensor reads only; unreadable GPU/thermal/fan metrics remain unavailable. FPS, the overlay and privileged sensors remain future work.
+- The experimental foreground-service implementation and package attribution **require Odin 2 Portal hardware validation**. See [Playtest guide](docs/PLAYTEST_GUIDE_v0.3.md) and [v0.3 draft PR](https://github.com/locutus5382/O2P-Control-Center/pull/7).
+
 ## v0.2 alpha (alpha3)
 
 ### Hardware Explorer
