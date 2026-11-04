@@ -9,7 +9,27 @@ package com.odin2portal.control.monitor
  */
 enum class AppAttribution(val description: String) {
     MANUAL_LABEL("User-entered label"),
-    NOT_AVAILABLE("No application identified")
+    NOT_AVAILABLE("No application identified"),
+    USAGE_EVENTS("Foreground package from Android Usage Access"),
+    PRIVILEGED_TASK("Foreground package from verified privileged task signals")
+}
+
+/** Future foreground-app backend can supply verified package context here. */
+data class SessionAppContext(
+    val label: String,
+    val packageName: String? = null,
+    val attribution: AppAttribution = AppAttribution.NOT_AVAILABLE
+) {
+    companion object {
+        fun manuallyEntered(label: String): SessionAppContext {
+            val value = label.trim().take(64)
+            return SessionAppContext(
+                label = value,
+                packageName = null,
+                attribution = if (value.isEmpty()) AppAttribution.NOT_AVAILABLE else AppAttribution.MANUAL_LABEL
+            )
+        }
+    }
 }
 
 data class SummaryValue(
@@ -26,6 +46,7 @@ data class RecordedInterval(
     val endTimeMs: Long,
     val configuredIntervalMs: Long,
     val label: String,
+    val packageName: String?,
     val attribution: AppAttribution,
     val sampleCount: Int,
     val values: Map<Metric, SummaryValue>
@@ -101,7 +122,7 @@ class SessionHistory(
     private var begin: Long? = null
     private var end: Long = 0L
     private var samples: Int = 0
-    private var label: String = ""
+    private var appContext: SessionAppContext = SessionAppContext.manuallyEntered("")
     private var readings = mutableMapOf<Metric, MetricAccumulator>()
     var droppedRows: Long = 0
         private set
@@ -125,19 +146,33 @@ class SessionHistory(
         }
     }
 
-    /** The label is manually entered and cannot be mistaken for autodetection. */
-    fun offer(sample: MonitorSample, enteredLabel: String) {
-        val normalized = enteredLabel.trim().take(64)
-        // A new session or time reversal must never silently mix readings.
+    /** This overload is *always* manually attributed, never automatic process detection. */
+    fun offer(sample: MonitorSample, enteredLabel: String) =
+        offer(sample, SessionAppContext.manuallyEntered(enteredLabel))
+
+    /**
+     * Future background detector will supply package, source and label.
+     * Reject impossible automatic package claims instead of pretending an app was detected.
+     */
+    fun offer(sample: MonitorSample, context: SessionAppContext) {
+        val normalized = context.copy(
+            label = context.label.trim().take(64),
+            packageName = context.packageName?.trim()?.take(256)?.takeIf { it.isNotEmpty() }
+        )
+        require(
+            normalized.attribution !in setOf(AppAttribution.USAGE_EVENTS, AppAttribution.PRIVILEGED_TASK)
+                || normalized.packageName != null
+        ) { "Automatically attributed context requires a package name" }
+        // App switches and time reversal must not silently mix readings.
         if (begin != null && (sample.timestamp < end ||
                     sample.timestamp - begin!! >= recordingIntervalMs ||
-                    normalized != label)) {
+                    normalized != appContext)) {
             closePartial()
         }
         if (begin == null) {
             begin = sample.timestamp
             end = sample.timestamp
-            label = normalized
+            appContext = normalized
         }
         end = sample.timestamp
         samples++
@@ -149,14 +184,13 @@ class SessionHistory(
     fun closePartial() {
         val start = begin ?: return
         if (samples > 0) {
-            val attribution = if (label.isBlank()) AppAttribution.NOT_AVAILABLE
-                              else AppAttribution.MANUAL_LABEL
             val row = RecordedInterval(
                 startTimeMs = start,
                 endTimeMs = end,
                 configuredIntervalMs = recordingIntervalMs,
-                label = label.ifBlank { "Not specified" },
-                attribution = attribution,
+                label = appContext.label.ifBlank { "Not specified" },
+                packageName = appContext.packageName,
+                attribution = appContext.attribution,
                 sampleCount = samples,
                 values = readings.mapValues { it.value.freeze() }
             )
@@ -173,7 +207,7 @@ class SessionHistory(
         begin = null
         end = 0L
         samples = 0
-        label = ""
+        appContext = SessionAppContext.manuallyEntered("")
         readings = mutableMapOf()
     }
 }
