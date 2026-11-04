@@ -172,6 +172,7 @@ fun GameplayPanel(
             status.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             uiMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
+        HudControls(appearance)
         O2PPanel(appearance) {
             Text("PRIVACY & ACCESS", style = MaterialTheme.typography.titleMedium)
             StatusLine("Android Usage Access",

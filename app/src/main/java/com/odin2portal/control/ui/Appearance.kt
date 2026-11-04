@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -256,9 +257,16 @@ fun O2PPanel(
     ) else Brush.linearGradient(listOf(c.outline, c.outline))
     Column(
         modifier = modifier
+            .shadow(
+                elevation = if (glass) 11.dp else 2.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = c.accent.copy(alpha = if (c.light) 0.16f else 0.22f),
+                spotColor = Color.Black.copy(alpha = 0.24f)
+            )
             .clip(shape)
             .background(fill)
-            .border(if (glass) 1.dp else 0.7.dp, rim, shape)
+            .border(if (glass) 1.2.dp else 0.7.dp, rim, shape)
             .padding(if (glass) 15.dp else 14.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
@@ -287,11 +295,12 @@ fun O2PAction(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.965f else 1f,
+        targetValue = if (pressed) 0.935f else 1f,
         animationSpec = tween(durationMillis = 140),
         label = "pressScale"
     )
     val shape = RoundedCornerShape(if (glass) 13.dp else 10.dp)
+    val rimPulse = (1f - kotlin.math.abs(progress.value - 0.25f) / 1.2f).coerceIn(0f, 1f)
     val solid = if (primary) c.accent else c.panelAlt
     val text = if (primary) c.onAccent else c.ink
     val fill = if (glass) Brush.linearGradient(
@@ -314,7 +323,8 @@ fun O2PAction(
             .border(
                 0.8.dp,
                 if (glass) {
-                    if (primary) Color.White.copy(alpha = 0.39f) else c.outline
+                    if (primary) Color.White.copy(alpha = 0.40f + rimPulse * 0.42f)
+                    else c.outline.copy(alpha = (c.outline.alpha + rimPulse * 0.40f).coerceAtMost(1f))
                 } else c.outline,
                 shape
             )
@@ -323,14 +333,14 @@ fun O2PAction(
                     scope.launch {
                         progress.stop()
                         progress.snapTo(-1f)
-                        progress.animateTo(1.8f, tween(520, easing = FastOutSlowInEasing))
+                        progress.animateTo(1.8f, tween(720, easing = FastOutSlowInEasing))
                     }
                 }
                 onClick()
             },
         contentAlignment = Alignment.Center
     ) {
-        // The light physically crosses the glass face over ~520ms.
+        // Strong diagonal specular sweep over 720 ms; only animates when tapped.
         if (glass && settings.lightSweep) {
             Canvas(Modifier.matchParentSize()) {
                 if (progress.value > -0.98f && progress.value < 1.75f) {
@@ -339,15 +349,26 @@ fun O2PAction(
                         Brush.linearGradient(
                             listOf(
                                 Color.Transparent,
-                                Color.White.copy(alpha = if (c.light) 0.55f else 0.28f),
+                                Color.White.copy(alpha = if (c.light) 0.80f else 0.70f),
                                 Color.Transparent
                             ),
-                            start = Offset(cx - 70f, -30f),
-                            end = Offset(cx + 70f, size.height + 30f)
+                            start = Offset(cx - 42f, -30f),
+                            end = Offset(cx + 42f, size.height + 30f)
                         )
                     )
                 }
             }
+        }
+        if (glass) {
+            Box(Modifier.matchParentSize().padding(1.dp).border(
+                0.8.dp,
+                Brush.linearGradient(listOf(
+                    Color.White.copy(alpha = 0.22f + rimPulse * 0.35f),
+                    c.accent.copy(alpha = 0.20f),
+                    Color.White.copy(alpha = 0.10f + rimPulse * 0.15f)
+                )),
+                shape
+            ))
         }
         Text(
             label, color = text, maxLines = 1, overflow = TextOverflow.Ellipsis,
