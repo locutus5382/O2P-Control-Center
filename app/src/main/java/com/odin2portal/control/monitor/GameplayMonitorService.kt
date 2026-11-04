@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -92,6 +94,17 @@ class GameplayMonitorService : Service() {
             .takeIf(RecordingIntervals::valid) ?: RecordingIntervals.defaultMs
         val manual = (intent.getStringExtra(EXTRA_LABEL) ?: "").trim().take(64)
         val startedAt = System.currentTimeMillis()
+
+        // A visible Stop notification is required for this opt-in beta.
+        // Do not start silently if the user has denied notifications.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            GameplayRuntime.update(GameplayStatus(
+                message = "Gameplay recording not started: allow notifications to show the Stop action"
+            ))
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         try {
             val initial = notification("Starting performance recording", "Tap to open O2P Control Center")
