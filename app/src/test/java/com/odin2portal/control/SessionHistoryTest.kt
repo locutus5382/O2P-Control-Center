@@ -7,6 +7,7 @@ import com.odin2portal.control.monitor.MonitorSample
 import com.odin2portal.control.monitor.Reading
 import com.odin2portal.control.monitor.RecordingIntervals
 import com.odin2portal.control.monitor.SessionHistory
+import com.odin2portal.control.monitor.SessionAppContext
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -82,5 +83,35 @@ class SessionHistoryTest {
         assertTrue(csv.contains("Unavailable"))
         assertTrue(csv.contains("\"'=HYPERLINK(\"\"evil\"\")\""))
         assertTrue(csv.contains("\"10\"")) // configured seconds
+    }
+
+    @Test fun foregroundPackageChangeSplitsHistoryAndPreservesSource() {
+        val recorder = SessionHistory(120_000L)
+        val eden = SessionAppContext("Eden", "dev.eden.emulator", AppAttribution.USAGE_EVENTS)
+        val launcher = SessionAppContext("Launcher", "com.launcher", AppAttribution.USAGE_EVENTS)
+        recorder.offer(sample(0L, "50%"), eden)
+        recorder.offer(sample(2_000L, "60%"), eden)
+        recorder.offer(sample(4_000L, "10%"), launcher)
+        recorder.closePartial()
+        assertEquals(2, recorder.rowCount)
+        val entries = recorder.snapshot()
+        assertEquals("dev.eden.emulator", entries[0].packageName)
+        assertEquals(AppAttribution.USAGE_EVENTS, entries[0].attribution)
+        assertEquals(2, entries[0].sampleCount)
+        assertEquals("com.launcher", entries[1].packageName)
+        assertEquals(1, entries[1].sampleCount)
+        val csv = MonitorCsv.formatHistory(entries)
+        assertTrue(csv.contains("dev.eden.emulator"))
+        assertTrue(csv.contains("com.launcher"))
+    }
+
+    @Test fun automaticAttributionWithoutPackageIsRejected() {
+        val history = SessionHistory()
+        try {
+            history.offer(sample(0L), SessionAppContext("Eden", null, AppAttribution.PRIVILEGED_TASK))
+            fail("Missing detected package should have thrown")
+        } catch (_: IllegalArgumentException) {
+            assertEquals(0, history.rowCount)
+        }
     }
 }
