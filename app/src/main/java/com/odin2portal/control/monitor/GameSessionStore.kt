@@ -88,6 +88,17 @@ class GameSessionStore(context: Context) :
                 }
                 db.insertOrThrow("game_intervals", null, values)
             }
+            // Keep a bounded database even for very long gameplay sessions.
+            // Retain newest 5,000 intervals per session, and 20 sessions overall.
+            db.execSQL(
+                """DELETE FROM game_intervals
+                   WHERE session_id=?
+                     AND id NOT IN (
+                       SELECT id FROM game_intervals
+                       WHERE session_id=? ORDER BY id DESC LIMIT 5000
+                     )""".trimIndent(),
+                arrayOf(sessionId, sessionId)
+            )
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -172,8 +183,12 @@ class GameSessionStore(context: Context) :
         val db = writableDatabase
         db.beginTransaction()
         try {
-            db.delete("game_intervals", "session_id=?", arrayOf(sessionId.toString()))
-            db.delete("game_sessions", "id=? AND status!='RECORDING'", arrayOf(sessionId.toString()))
+            val deleted = db.delete(
+                "game_sessions", "id=? AND status!='RECORDING'", arrayOf(sessionId.toString())
+            )
+            if (deleted > 0) {
+                db.delete("game_intervals", "session_id=?", arrayOf(sessionId.toString()))
+            }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }
