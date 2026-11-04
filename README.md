@@ -1,40 +1,43 @@
 # O2P Control Center
 
-**New application derived from the O2PKernelTurb concept.** First working source milestone: read-only hardware explorer for the AYN Odin 2 Portal Base (Snapdragon 8 Gen 2, 8 GB RAM).
+A dedicated Android performance and diagnostics project for the **AYN Odin 2 Portal Base**. The user interface offers Liquid Glass and Material-style appearance options, and the current alpha is intentionally **read-only**.
 
-![Stage](https://img.shields.io/badge/stage-read--only%20alpha-informational)
+## v0.2 alpha
 
-## What it does
+### Hardware Explorer
+- Inspect actual CPU frequency policies, GPU/KGSL nodes, named thermal zones and memory pressure.
+- Choose **Direct**, **PServer**, or **Root** read-only inspection explicitly. No privileged mode is activated automatically.
+- Export diagnostic data through Android's Share menu.
 
-- Scans actual CPU frequency policies and displays live frequency, min/max and hardware frequency levels where exposed.
-- Reads Adreno GPU stats, supported raw frequency nodes and devfreq information when available.
-- Enumerates named thermal zones; does **not** assume zone0 is the SoC temperature.
-- Reads `/proc/meminfo` and memory-pressure metrics.
-- Can attempt **explicitly requested** PServer or root (`su`) inspection, using the original app's PServer transaction format. It never executes writes.
-- Exports a diagnostic report using Android's share sheet.
+### Performance Monitor (new in v0.2)
+- Open the **Monitor** tab and turn live monitoring on.
+- Choose any combination of FPS, CPU/SoC temperature, GPU temperature, battery temperature, CPU load, CPU/GPU clocks and utilization, system RAM, and fan RPM.
+- Select a sampling interval of 1, 2 or 5 seconds. The chosen metrics and interval are saved locally.
+- All metrics have **Unavailable** behavior for missing/blocked sensors. FPS is not implemented until a valid SurfaceFlinger per-layer source is confirmed.
+- Monitoring only operates while the Monitor screen remains visible and the Activity is active; it stops when you leave the screen or the app goes into the background. No daemon, notification, floating HUD, or system setting writes are enabled yet.
+
+### Appearance
+- Choose Glass or Material and independent color accents, plus adjustable glass translucency and press-triggered light sweep.
 
 ## Build
 
-1. Open this directory as a project in Android Studio with Android SDK 35, Java 17 and Gradle 8.9 installed.
-2. Sync the Gradle project and run `:app:testDebugUnitTest` and `:app:assembleDebug` using the IDE/installed Gradle. The Gradle wrapper JAR is not included; a local Gradle installation or the GitHub Actions workflow is required.
-3. Or push this project to a GitHub repository: **Actions → Android debug build → Run workflow**. Download the `O2P-Control-Center-debug` artifact after its build succeeds.
-4. Install the resulting `app-debug.apk` on the Odin as a separate app.
+The Android sources are tracked as ordinary files in GitHub. The old ZIP-based workaround has been removed from the new branch.
 
-### Important
+- Java 17; Android SDK 35; Gradle 8.9
+- From the repository root: `gradle :app:testDebugUnitTest :app:assembleDebug`
+- Alternatively, GitHub **Actions → Android debug build** publishes `O2P-Control-Center-debug` containing `app-debug.apk`.
+- This project includes no Gradle wrapper executable JAR; use a local Gradle installation or GitHub Actions.
 
-This project has **not yet been APK-compiled** because the current source-generation environment lacks Android SDK and Gradle. The CLI Kotlin compiler is used for syntax checks of Android-free components. Android hardware and PServer behavior must be verified on the user's device. See [implementation status](docs/IMPLEMENTATION_STATUS.md).
+**Validation:** GitHub Actions CI passed for the v0.2 feature branch. The new monitor has not yet been tested on physical Odin hardware. Sensor access, GPU formatting and privileged inspection are firmware-dependent and must be verified on-device.
 
-### Privileged access
+## Safety
 
-Select Direct for ordinary Android app reads. Select PServer to probe `ServiceManager.getService("PServerBinder")`; a valid command result and reported UID are shown separately. Select Root only if you want a `su` prompt. This is a read-only app. PServer is a firmware-specific, non-public interface and might be unavailable or change.
+- This alpha never writes to `/sys`, `/proc`, charging, fan, or thermal settings.
+- Manual tuning and AutoPilot are planned, not operational. No fake FPS, temperature or fan readings are generated.
+- The exported diagnostics could contain device-specific information. Review before sharing publicly.
 
-### Safety
+See [product roadmap](docs/PRODUCT_ROADMAP.md) and [v0.2 draft pull request](https://github.com/locutus5382/O2P-Control-Center/pull/5).
 
-- This alpha **never writes to `/sys` or `/proc`**; it cannot underclock or change OEM thermal controls.
-- AutoPilot is not represented as operational.
-- Do not run two future frequency controllers simultaneously.
-- Do not publish the exported diagnostics without reviewing for device-identifying information.
+## History
 
-## Engineering notes
-
-Read the [status and next steps](docs/IMPLEMENTATION_STATUS.md). A separate technical design was prepared as `O2P_Control_Center_Technical_Specification.md` (if included with this archive).
+The project is based on concepts from [O2PKernelTurb](https://github.com/locutus5382/O2PKernelTurb); its original repository remains unchanged.
