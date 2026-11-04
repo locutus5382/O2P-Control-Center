@@ -7,6 +7,7 @@ import android.os.BatteryManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.odin2portal.control.domain.Parsing
+import com.odin2portal.control.domain.SensorSelection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -64,14 +65,19 @@ class DirectMonitor(private val app: Application) {
         File(path).takeIf { it.isFile && it.canRead() }?.bufferedReader()?.use { it.readText().trim().take(8192) }
     } catch (_: Exception) { null }
     private fun temp(accept: (String) -> Boolean): Reading {
-        val zones = File("/sys/class/thermal").listFiles()?.filter { it.name.matches(Regex("thermal_zone\\d+")) }?.take(128).orEmpty()
-        for (zone in zones) {
-            val name = read(zone.path + "/type") ?: continue
-            if (!accept(name.lowercase(Locale.ROOT))) continue
-            val degrees = Parsing.temperatureC(read(zone.path + "/temp")) ?: continue
-            return Reading(String.format(Locale.US, "%.1f °C", degrees), "Sensor: " + name)
+        val zones = File("/sys/class/thermal").listFiles()
+            ?.filter { it.name.matches(Regex("thermal_zone\\d+")) }?.take(128).orEmpty()
+        val readings = zones.mapNotNull { zone ->
+            val name = read(zone.path + "/type") ?: return@mapNotNull null
+            if (!accept(name)) return@mapNotNull null
+            name to Parsing.temperatureC(read(zone.path + "/temp"))
         }
-        return Reading(null, "No matching readable sensor")
+        val peak = SensorSelection.hottest(readings, accept)
+            ?: return Reading(null, "No readable, correctly named thermal sensor")
+        return Reading(
+            String.format(Locale.US, "%.1f °C", peak.celsius),
+            "Highest of ${peak.matchingCount} named sensors · ${peak.sensor}"
+        )
     }
     private fun cpuClocks(): Reading {
         val policies = File("/sys/devices/system/cpu/cpufreq").listFiles()
@@ -96,7 +102,8 @@ class DirectMonitor(private val app: Application) {
     }
     private fun gpuLoad(): Reading {
         val root = "/sys/class/kgsl/kgsl-3d0/"
-        read(root + "gpu_busy_percentage")?.toIntOrNull()?.takeIf { it in 0..100 }?.let {
+        read(root + "gpu_busy_percentage")?.trim()?.substringBefore(" ")?.trim()
+            ?.removeSuffix("%")?.trim()?.toIntOrNull()?.takeIf { it in 0..100 }?.let {
             return Reading(it.toString() + "%", "gpu_busy_percentage")
         }
         val ticks = read(root + "gpubusy")?.split(Regex("\\s+"))?.mapNotNull { it.toLongOrNull() }.orEmpty()
@@ -136,8 +143,8 @@ class DirectMonitor(private val app: Application) {
         else Reading(null, "System RAM not accessible")
         MonitorSample(System.currentTimeMillis(), mapOf(
             Metric.FPS to Reading(null, "FPS backend needs on-device layer validation"),
-            Metric.SOC_TEMP to temp { it.contains("cpu") || it.contains("soc") || it == "ap" },
-            Metric.GPU_TEMP to temp { it.contains("gpu") },
+            Metric.SOC_TEMP to temp(SensorSelection::isCpu),
+            Metric.GPU_TEMP to temp(SensorSelection::isGpu),
             Metric.BATTERY_TEMP to batteryTemp,
             Metric.BATTERY_LEVEL to batteryLevel,
             Metric.CPU_LOAD to Reading(cpu?.toString()?.plus("%"), "First sample establishes a baseline"),
