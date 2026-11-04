@@ -36,14 +36,24 @@ class ForegroundAppDetector(private val context: Context) {
 
     /** Returns verified package context or explicitly unattributed fallback. */
     fun current(now: Long, manualFallback: String): SessionAppContext {
-        if (!hasUsageAccess() || power?.isInteractive == false || keyguard?.isKeyguardLocked == true) {
+        if (!hasUsageAccess()) {
             activePackage = null
             lastProcessedTime = 0L
             return SessionAppContext.manuallyEntered(manualFallback)
         }
-        // One-time lookback permits picking up the foreground activity before monitoring started.
-        // Subsequent calls query only new usage events (plus a small time overlap).
-        val from = if (lastProcessedTime == 0L || now < lastProcessedTime) {
+        if (power?.isInteractive == false || keyguard?.isKeyguardLocked == true) {
+            activePackage = null
+            lastProcessedTime = 0L
+            // Lock screen is not a verified active game, even with Usage Access.
+            return SessionAppContext.manuallyEntered("")
+        }
+        if (now < lastProcessedTime) {
+            activePackage = null
+            lastProcessedTime = 0L
+        }
+        // One-time lookback permits picking up foreground activity when recording starts.
+        // Subsequent calls query only new usage events (plus small overlap).
+        val from = if (lastProcessedTime == 0L) {
             activePackage = null
             (now - 5 * 60_000L).coerceAtLeast(0L)
         } else (lastProcessedTime - 1000L).coerceAtLeast(0L)
