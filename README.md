@@ -2,7 +2,7 @@
 
 A dedicated Android performance and diagnostics project for the **AYN Odin 2 Portal Base**. The user interface offers Liquid Glass and Material-style appearance options, and the current alpha is intentionally **read-only**.
 
-## v0.2 alpha
+## v0.2 alpha (alpha2)
 
 ### Hardware Explorer
 - Inspect actual CPU frequency policies, GPU/KGSL nodes, named thermal zones and memory pressure.
@@ -14,6 +14,8 @@ A dedicated Android performance and diagnostics project for the **AYN Odin 2 Por
 - Choose any combination of FPS, CPU/SoC temperature, GPU temperature, battery temperature, CPU load, CPU/GPU clocks and utilization, system RAM, and fan RPM.
 - Select a sampling interval of 1, 2 or 5 seconds. The chosen metrics and interval are saved locally.
 - All metrics have **Unavailable** behavior for missing/blocked sensors. FPS is not implemented until a valid SurfaceFlinger per-layer source is confirmed.
+- Battery level and battery temperature are read from Android's battery broadcast (if available).
+- Optional **Record this session** toggle stores at most 600 samples in memory, and **Save recorded CSV** uses Android's file picker to write a report only when requested. Nothing is recorded unless explicitly enabled.
 - Monitoring only operates while the Monitor screen remains visible and the Activity is active; it stops when you leave the screen or the app goes into the background. No daemon, notification, floating HUD, or system setting writes are enabled yet.
 
 ### Appearance
