@@ -32,4 +32,47 @@ object MonitorCsv {
         }
         return if (rows.isEmpty()) header + "\r\n" else header + "\r\n" + rows + "\r\n"
     }
+
+    /**
+     * Per-interval summary export. "App label" is user input; it is not claimed
+     * to be an automatically detected foreground process. Mean/min/max cover
+     * only parsable numeric sensor values; unavailable values stay unavailable.
+     */
+    fun formatHistory(rows: List<RecordedInterval>): String {
+        val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        val fields = listOf(
+            "Window start UTC", "Window end UTC", "Configured interval seconds",
+            "App/session label", "Attribution", "Live samples in window"
+        ) + Metric.entries.flatMap { metric ->
+            listOf(
+                "${metric.label} (latest)",
+                "${metric.label} (average)",
+                "${metric.label} (minimum)",
+                "${metric.label} (maximum)",
+                "${metric.label} (unit)"
+            )
+        }
+        val header = fields.joinToString(",") { cell(it) }
+        val data = rows.joinToString("\r\n") { row ->
+            val values = listOf(
+                formatter.format(Date(row.startTimeMs)),
+                formatter.format(Date(row.endTimeMs)),
+                (row.configuredIntervalMs / 1000).toString(),
+                row.label, row.attribution.description, row.sampleCount.toString()
+            ) + Metric.entries.flatMap { metric ->
+                val value = row.values[metric]
+                listOf(
+                    value?.latest ?: "Unavailable",
+                    value?.average?.let { String.format(Locale.US, "%.2f", it) } ?: "",
+                    value?.minimum?.let { String.format(Locale.US, "%.2f", it) } ?: "",
+                    value?.maximum?.let { String.format(Locale.US, "%.2f", it) } ?: "",
+                    value?.unit ?: ""
+                )
+            }
+            values.joinToString(",") { cell(it) }
+        }
+        return if (data.isEmpty()) header + "\r\n" else header + "\r\n" + data + "\r\n"
+    }
 }
