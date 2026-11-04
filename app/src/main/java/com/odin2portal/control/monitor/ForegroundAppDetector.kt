@@ -23,6 +23,7 @@ class ForegroundAppDetector(private val context: Context) {
     private val keyguard = context.getSystemService(KeyguardManager::class.java)
     private val power = context.getSystemService(PowerManager::class.java)
     private var lastProcessedTime = 0L
+    private var lastQueryEnd = 0L
     private var activePackage: String? = null
 
     fun hasUsageAccess(): Boolean = try {
@@ -39,26 +40,30 @@ class ForegroundAppDetector(private val context: Context) {
         if (!hasUsageAccess()) {
             activePackage = null
             lastProcessedTime = 0L
+            lastQueryEnd = 0L
             return SessionAppContext.manuallyEntered(manualFallback)
         }
         if (power?.isInteractive == false || keyguard?.isKeyguardLocked == true) {
             activePackage = null
             lastProcessedTime = 0L
+            lastQueryEnd = 0L
             // Lock screen is not a verified active game, even with Usage Access.
             return SessionAppContext.manuallyEntered("")
         }
-        if (now < lastProcessedTime) {
+        if (now < lastProcessedTime || now < lastQueryEnd) {
             activePackage = null
             lastProcessedTime = 0L
+            lastQueryEnd = 0L
         }
         // One-time lookback permits picking up foreground activity when recording starts.
         // Subsequent calls query only new usage events (plus small overlap).
-        val from = if (lastProcessedTime == 0L) {
+        val from = if (lastQueryEnd == 0L) {
             activePackage = null
             (now - 5 * 60_000L).coerceAtLeast(0L)
-        } else (lastProcessedTime - 1000L).coerceAtLeast(0L)
+        } else (lastQueryEnd - 5000L).coerceAtLeast(0L)
         val events = try { usage?.queryEvents(from, now + 1L) } catch (_: RuntimeException) { null }
             ?: return SessionAppContext.manuallyEntered(manualFallback)
+        lastQueryEnd = now
 
         val event = UsageEvents.Event()
         var maxSeen = lastProcessedTime
