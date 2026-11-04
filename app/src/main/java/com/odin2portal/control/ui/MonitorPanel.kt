@@ -153,6 +153,42 @@ fun MonitorPanel(appearance: AppearanceSettings) {
                 color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelSmall)
         }
     }
+    if (state.recentIntervals.isNotEmpty()) {
+        Spacer(Modifier.height(12.dp))
+        O2PPanel(appearance) {
+            Text("RECENT HISTORY", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Last three completed intervals · source labels are explicit",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary)
+            state.recentIntervals.asReversed().forEach { interval ->
+                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(interval.label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(interval.endTimeMs)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary)
+                }
+                Text(
+                    (interval.packageName ?: interval.attribution.description) +
+                        " · " + (interval.configuredIntervalMs / 1000) + "s interval" +
+                        " · " + interval.sampleCount + " samples",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                val soc = interval.values[Metric.SOC_TEMP]?.average
+                val cpu = interval.values[Metric.CPU_LOAD]?.average
+                val gpu = interval.values[Metric.GPU_LOAD]?.average
+                val ram = interval.values[Metric.RAM]?.average
+                Text(
+                    "SoC avg: " + (soc?.let { String.format(Locale.US, "%.1f °C", it) } ?: "Unavailable") +
+                        "  · CPU: " + (cpu?.let { String.format(Locale.US, "%.0f%%", it) } ?: "Unavailable") +
+                        "  · GPU: " + (gpu?.let { String.format(Locale.US, "%.0f%%", it) } ?: "Unavailable") +
+                        "  · RAM: " + (ram?.let { String.format(Locale.US, "%.2f GiB", it) } ?: "Unavailable"),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
     Spacer(Modifier.height(12.dp))
     O2PPanel(appearance) {
         Text("VISIBLE METRICS", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
