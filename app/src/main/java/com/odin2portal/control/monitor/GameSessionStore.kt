@@ -24,6 +24,12 @@ data class SavedGameSession(
 class GameSessionStore(context: Context) :
     SQLiteOpenHelper(context.applicationContext, "o2p_gameplay_history.db", null, 1) {
 
+    init {
+        // The UI may export an existing session while the service appends new
+        // completed intervals. WAL improves reader/writer coexistence.
+        setWriteAheadLoggingEnabled(true)
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE game_sessions (
