@@ -65,7 +65,7 @@ private data class NumericReading(val value: Double, val unit: String)
 
 /** Only single, explicit numeric values may be averaged. Never average compound clock lists. */
 private object NumericParser {
-    private val numeric = Regex("""^(-?\d+(?:\.\d+)?)\s*(%|°C|MHz|GHz|RPM)$""")
+    private val numeric = Regex("""^(-?\d+(?:\.\d+)?)\s*(%|°C|MHz|GHz|GiB|RPM)$""")
     fun parse(raw: String?): Pair<Double, String>? {
         val found = raw?.let { numeric.matchEntire(it.trim()) } ?: return null
         val n = found.groupValues[1].toDoubleOrNull() ?: return null
