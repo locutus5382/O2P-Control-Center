@@ -52,12 +52,12 @@ fun HudControls(appearance: AppearanceSettings) {
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             O2PAction("Floating + notification", appearance, Modifier.weight(1f),
                 primary = settings.mode == HudDisplayMode.FLOATING_WITH_NOTIFICATION) {
-                settings.setMode(HudDisplayMode.FLOATING_WITH_NOTIFICATION)
+                settings.chooseMode(HudDisplayMode.FLOATING_WITH_NOTIFICATION)
                 applyChanges()
             }
             O2PAction("Notification only", appearance, Modifier.weight(1f),
                 primary = settings.mode == HudDisplayMode.NOTIFICATION_ONLY) {
-                settings.setMode(HudDisplayMode.NOTIFICATION_ONLY)
+                settings.chooseMode(HudDisplayMode.NOTIFICATION_ONLY)
                 applyChanges()
             }
         }
@@ -76,7 +76,7 @@ fun HudControls(appearance: AppearanceSettings) {
                 HudPreset.entries.forEach { preset ->
                     O2PAction(preset.name.lowercase().replaceFirstChar { it.uppercase() },
                         appearance, Modifier.weight(1f), primary = settings.preset == preset) {
-                        settings.setPreset(preset)
+                        settings.choosePreset(preset)
                         applyChanges()
                     }
                 }
@@ -103,7 +103,7 @@ fun HudControls(appearance: AppearanceSettings) {
                 HudDock.entries.forEach { dock ->
                     O2PAction(dock.name.lowercase().replaceFirstChar { it.uppercase() },
                         appearance, Modifier.weight(1f), primary = settings.dock == dock) {
-                        settings.setDock(dock)
+                        settings.chooseDock(dock)
                         applyChanges()
                     }
                 }
@@ -115,26 +115,26 @@ fun HudControls(appearance: AppearanceSettings) {
                         color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = settings.locked, onCheckedChange = {
-                    settings.setLocked(it)
+                    settings.changeLocked(it)
                     applyChanges()
                 })
             }
             Text("Transparency  ·  " + (settings.opacity * 100).toInt() + "%",
                 style = MaterialTheme.typography.labelLarge)
             Slider(value = settings.opacity, onValueChange = {
-                settings.setOpacity(it)
+                settings.changeOpacity(it)
                 applyChanges()
             }, valueRange = .30f..0.90f)
             Text("HUD size  ·  " + (settings.scale * 100).toInt() + "%",
                 style = MaterialTheme.typography.labelLarge)
             Slider(value = settings.scale, onValueChange = {
-                settings.setScale(it)
+                settings.changeScale(it)
                 applyChanges()
             }, valueRange = .8f..1.3f)
             if (session.running) {
                 O2PAction(if (settings.floatingVisible) "Hide floating HUD" else "Show floating HUD",
                     appearance, Modifier.fillMaxWidth()) {
-                    settings.setFloatingVisible(!settings.floatingVisible)
+                    settings.changeFloatingVisible(!settings.floatingVisible)
                     applyChanges()
                 }
             }
