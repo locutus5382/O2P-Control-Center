@@ -57,6 +57,8 @@ class GameplayMonitorService : Service() {
     private lateinit var db: GameSessionStore
     private lateinit var detector: ForegroundAppDetector
     private lateinit var collector: DirectMonitor
+    private lateinit var hudSettings: HudPreferences
+    private lateinit var hudOverlay: HudOverlay
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -65,6 +67,8 @@ class GameplayMonitorService : Service() {
         db = GameSessionStore(this)
         detector = ForegroundAppDetector(this)
         collector = DirectMonitor(application)
+        hudSettings = HudPreferences(applicationContext)
+        hudOverlay = HudOverlay(this, hudSettings)
         val channel = NotificationChannel(
             CHANNEL_ID, "O2P Gameplay Monitoring", NotificationManager.IMPORTANCE_LOW
         ).apply {
@@ -75,7 +79,23 @@ class GameplayMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_TOGGLE_HUD || intent?.action == ACTION_REFRESH_HUD) {
+            if (job?.isActive == true) {
+                if (intent.action == ACTION_TOGGLE_HUD) {
+                    hudSettings.setFloatingVisible(!hudSettings.floatingVisible)
+                } else {
+                    hudSettings.refresh()
+                }
+                hudOverlay.render(GameplayRuntime.state.value.latestSample)
+                updateNotification("O2P gameplay recording",
+                    if (hudSettings.floatingVisible) "HUD visible" else "HUD hidden")
+            } else {
+                stopSelf()
+            }
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
+            hudOverlay.hide()
             stopping = true
             job?.cancel() ?: run {
                 GameplayRuntime.update(GameplayStatus(message = "Recording stopped"))
@@ -153,6 +173,9 @@ class GameplayMonitorService : Service() {
                     }
                     history.offer(sample, app)
                     flush()
+                    withContext(Dispatchers.Main.immediate) {
+                        hudOverlay.render(sample)
+                    }
                     val current = GameplayRuntime.state.value
                     GameplayRuntime.update(current.copy(
                         running = true,
@@ -196,6 +219,7 @@ class GameplayMonitorService : Service() {
                             intervalsSaved = (history.rowCount.toLong() + history.droppedRows).toInt(),
                             message = error ?: "Session stopped; history saved on device"
                         ))
+                        withContext(Dispatchers.Main.immediate) { hudOverlay.hide() }
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
                     }
@@ -212,6 +236,11 @@ class GameplayMonitorService : Service() {
         val open = PendingIntent.getActivity(
             this, 1, launch, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val toggle = PendingIntent.getService(
+            this, 3,
+            Intent(this, GameplayMonitorService::class.java).setAction(ACTION_TOGGLE_HUD),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val stop = PendingIntent.getService(
             this, 2,
             Intent(this, GameplayMonitorService::class.java).setAction(ACTION_STOP),
@@ -225,6 +254,10 @@ class GameplayMonitorService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
+            .addAction(Notification.Action.Builder(
+                android.R.drawable.ic_menu_view,
+                if (hudSettings.floatingVisible) "Hide HUD" else "Show HUD", toggle
+            ).build())
             .addAction(Notification.Action.Builder(
                 android.R.drawable.ic_menu_close_clear_cancel, "Stop", stop
             ).build())
@@ -242,6 +275,7 @@ class GameplayMonitorService : Service() {
     }
 
     override fun onDestroy() {
+        hudOverlay.hide()
         job?.cancel()
         scope.cancel()
         db.close()
@@ -251,6 +285,8 @@ class GameplayMonitorService : Service() {
     companion object {
         const val ACTION_START = "com.odin2portal.control.gameplay.START"
         const val ACTION_STOP = "com.odin2portal.control.gameplay.STOP"
+        const val ACTION_REFRESH_HUD = "com.odin2portal.control.gameplay.REFRESH_HUD"
+        const val ACTION_TOGGLE_HUD = "com.odin2portal.control.gameplay.TOGGLE_HUD"
         const val EXTRA_SAMPLE_MS = "sample_interval"
         const val EXTRA_HISTORY_MS = "record_interval"
         const val EXTRA_LABEL = "manual_session_label"
