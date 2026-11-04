@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -86,10 +87,32 @@ fun MonitorPanel(appearance: AppearanceSettings) {
         }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         HorizontalDivider(color = Color.White.copy(alpha = 0.14f))
+        Text("HISTORY RECORDING INTERVAL", fontWeight = FontWeight.SemiBold)
+        Text("Independent of live sampling · stores averages and available min/max values per interval",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(5000L to "5s", 10000L to "10s", 30000L to "30s", 120000L to "2m")
+                .forEach { (ms, name) ->
+                    O2PAction(
+                        name, appearance, Modifier.weight(1f),
+                        primary = state.recordingIntervalMs == ms
+                    ) { model.setRecordingInterval(ms) }
+                }
+        }
+        OutlinedTextField(
+            value = state.sessionLabel,
+            onValueChange = model::setSessionLabel,
+            label = { Text("Session / app label (optional)") },
+            placeholder = { Text("e.g. Eden — manually entered") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = !state.recording,
+            supportingText = { Text("Manual label only; automatic process detection is not active.") }
+        )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Record this session", fontWeight = FontWeight.Medium)
-                Text("Optional · keeps up to 600 samples in memory; no background collection",
+                Text("Optional · up to 600 summarized intervals in memory; no background collection",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary)
             }
@@ -99,11 +122,19 @@ fun MonitorPanel(appearance: AppearanceSettings) {
                 onCheckedChange = model::setRecording
             )
         }
-        Text("${state.capturedSamples} samples captured",
+        Text("${state.capturedSamples} intervals stored · ${state.pendingSamples} live samples in current interval",
             color = MaterialTheme.colorScheme.secondary,
             style = MaterialTheme.typography.labelMedium)
+        if (state.droppedRows > 0L) {
+            Text("${state.droppedRows} oldest intervals discarded after reaching the 600-row limit.",
+                color = MaterialTheme.colorScheme.secondary,
+                style = MaterialTheme.typography.bodySmall)
+        }
+        Text("You cannot record gameplay after switching to Eden yet: this alpha stops monitoring when you leave this screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary)
         O2PAction(
-            label = "Save recorded CSV",
+            label = "Save interval report (CSV)",
             settings = appearance,
             modifier = Modifier.fillMaxWidth(),
             enabled = state.capturedSamples > 0
