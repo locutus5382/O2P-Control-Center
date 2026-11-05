@@ -1,6 +1,6 @@
 package com.odin2portal.control.hardware
 
-enum class ReadSource { DIRECT, PSERVER, SU, NONE }
+enum class ReadSource { DIRECT, PSERVER, NONE }
 
 data class HardwareRead(
     val path: String,
@@ -15,7 +15,7 @@ data class HardwareRead(
     }
 }
 
-enum class AccessMode { DIRECT_ONLY, PSERVER, ROOT }
+enum class AccessMode { DIRECT_ONLY, PSERVER }
 
 data class PrivilegeStatus(
     val transport: ReadSource,

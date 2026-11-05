@@ -2,6 +2,10 @@
 
 A dedicated Android performance and diagnostics project for the **AYN Odin 2 Portal Base**. The user interface offers Liquid Glass and Material-style appearance options, and the current alpha is intentionally **read-only**.
 
+## v0.6 PServer-only safety architecture (draft)
+
+This development branch has removed the Root/su shell executor and Root diagnostic option. **No CPU/GPU writes are implemented.** The future Manual Performance Studio will cap only verified maximum frequencies, never overclock or undervolt, and will treat Stock / Tuning Off as the firmware's OEM-permitted default maximums (not forcing the clocks to run at those speeds). The profiles will be editable, with discrete OPP sliders and percentage-of-Stock labels. Full design and safety gates: [issue #11](https://github.com/locutus5382/O2P-Control-Center/issues/11).
+
 ## v0.3 gameplay recording (draft)
 
 - **Start gameplay recording** from the Monitor screen, then open Eden or another game. A user-started Android foreground service captures read-only system telemetry after O2P leaves the foreground.
@@ -16,7 +20,7 @@ A dedicated Android performance and diagnostics project for the **AYN Odin 2 Por
 
 ### Hardware Explorer
 - Inspect actual CPU frequency policies, GPU/KGSL nodes, named thermal zones and memory pressure.
-- Choose **Direct**, **PServer**, or **Root** read-only inspection explicitly. No privileged mode is activated automatically.
+- Choose **Direct** or **PServer** read-only inspection explicitly. O2P has **no root/su option** and does not offer to root the device. PServer uses a firmware-provided privileged service, so its capabilities remain tightly restricted and require validation.
 - Export diagnostic data through Android's Share menu.
 
 ### Performance Monitor (new in v0.2)
