@@ -2,6 +2,10 @@
 
 A dedicated Android performance and diagnostics project for the **AYN Odin 2 Portal Base**. The user interface offers Liquid Glass and Material-style appearance options, and the current alpha is intentionally **read-only**.
 
+## v0.6 Alpha 2 — read-only OEM Stock evidence and PServer compatibility
+
+The Studio can save and compare frequency snapshots at least 20 seconds apart for a user-labelled AYN performance mode. This is diagnostic evidence only: identical readings **do not verify OEM Stock**, and the hardware Apply/Tuning controls stay disabled. PServer compatibility now distinguishes Binder visibility from verified UID-0 legacy read-only output; failed legacy probes fall back to direct sensor reads. No host launch, write, `su`, or chmod is performed. [Read the device test guide](docs/PSERVER_STOCK_READONLY_VALIDATION.md).
+
 ## v0.6 PServer-only safety architecture (draft)
 
 This development branch has removed the Root/su shell executor and Root diagnostic option. **No CPU/GPU writes are implemented.** The future Manual Performance Studio will cap only verified maximum frequencies, never overclock or undervolt, and will treat Stock / Tuning Off as the firmware's OEM-permitted default maximums (not forcing the clocks to run at those speeds). The profiles will be editable, with discrete OPP sliders and percentage-of-Stock labels. Full design and safety gates: [issue #11](https://github.com/locutus5382/O2P-Control-Center/issues/11).
