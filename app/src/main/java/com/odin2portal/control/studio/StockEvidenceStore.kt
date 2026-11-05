@@ -73,7 +73,7 @@ class StockEvidenceStore(context: Context) {
             val domainRows = JSONArray()
             row.domains.forEach { domain ->
                 val opps = JSONArray()
-                domain.supported.forEach(opps::put)
+                domain.supported.forEach { opps.put(it) }
                 domainRows.put(JSONObject()
                     .put("id", domain.id)
                     .put("type", domain.type.name)
