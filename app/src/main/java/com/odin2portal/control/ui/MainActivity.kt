@@ -292,7 +292,7 @@ private fun DiagnosticsPage(
     O2PColumns(left = {
         O2PPanel(appearance) {
             Text("READ-ONLY DEVICE DISCOVERY", style = MaterialTheme.typography.titleMedium)
-            Text("Choose access manually. Elevated access is only available when a command is actually verified.",
+            Text("Choose access manually. PServer access is only available when a command is actually verified. No root or su option.",
                 color = appearance.colors.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 O2PAction("Direct", appearance, Modifier.weight(1f),
@@ -302,10 +302,6 @@ private fun DiagnosticsPage(
                 O2PAction("PServer", appearance, Modifier.weight(1f),
                     primary = state.mode == AccessMode.PSERVER, enabled = !state.busy) {
                     refresh(AccessMode.PSERVER)
-                }
-                O2PAction("Root", appearance, Modifier.weight(1f),
-                    primary = state.mode == AccessMode.ROOT, enabled = !state.busy) {
-                    refresh(AccessMode.ROOT)
                 }
             }
             if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
