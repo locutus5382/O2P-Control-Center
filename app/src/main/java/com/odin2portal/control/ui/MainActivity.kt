@@ -195,7 +195,7 @@ private fun OverviewPage(
             Text("DEVICE STATUS", style = MaterialTheme.typography.titleMedium)
             StatusLine("System", "Android " + (snapshot?.androidVersion ?: "—"), appearance)
             StatusLine("Sensor access", "Direct / read only", appearance)
-            StatusLine("Elevated access", if (snapshot?.privilege?.available == true) "Verified" else "Not verified", appearance)
+            StatusLine("PServer identity", if (snapshot?.accessMode == AccessMode.PSERVER && snapshot?.privilege?.available == true) "UID 0 read verified" else "Not verified", appearance)
             StatusLine("Clock control", "Disabled for safety", appearance)
             Text("Monitoring and session history work independently of tuning.",
                 style = MaterialTheme.typography.bodySmall,

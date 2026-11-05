@@ -32,20 +32,24 @@ class DeviceDiscovery(private val reader: HardwareReader = HardwareReader()) {
 
     suspend fun capture(mode: AccessMode): DeviceSnapshot = withContext(Dispatchers.IO) {
         val privilege = reader.probe(mode)
+        // A failed identity probe must not trigger dozens of unverified Binder transactions.
+        // An explicit PServer capture may still include successful direct reads.
+        val readMode = if (mode == AccessMode.PSERVER && !privilege.available)
+            AccessMode.DIRECT_ONLY else mode
         val cpuPolicies = mutableListOf<CpuPolicy>()
         for (id in directoryIndices(CPU_ROOT, "policy", 11)) {
             val base = "$CPU_ROOT/policy$id"
-            val current = reader.read("$base/scaling_cur_freq", mode)
-            val related = reader.read("$base/related_cpus", mode)
+            val current = reader.read("$base/scaling_cur_freq", readMode)
+            val related = reader.read("$base/related_cpus", readMode)
             if (!current.isValid && !related.isValid) continue
             cpuPolicies += CpuPolicy(
                 name = "policy$id",
                 relatedCpus = related,
                 currentKHz = current,
-                minKHz = reader.read("$base/scaling_min_freq", mode),
-                maxKHz = reader.read("$base/scaling_max_freq", mode),
-                hardwareMaxKHz = reader.read("$base/cpuinfo_max_freq", mode),
-                availableKHz = reader.read("$base/scaling_available_frequencies", mode)
+                minKHz = reader.read("$base/scaling_min_freq", readMode),
+                maxKHz = reader.read("$base/scaling_max_freq", readMode),
+                hardwareMaxKHz = reader.read("$base/cpuinfo_max_freq", readMode),
+                availableKHz = reader.read("$base/scaling_available_frequencies", readMode)
             )
         }
         val gpuNames = listOf(
@@ -54,18 +58,19 @@ class DeviceDiscovery(private val reader: HardwareReader = HardwareReader()) {
             "devfreq/cur_freq", "devfreq/min_freq", "devfreq/max_freq",
             "devfreq/available_frequencies", "devfreq/governor"
         )
-        val gpu = gpuNames.map { reader.read("$GPU_ROOT/$it", mode) }
+        val gpu = gpuNames.map { reader.read("$GPU_ROOT/$it", readMode) }
         val zones = mutableListOf<ThermalZone>()
         for (id in directoryIndices(THERMAL_ROOT, "thermal_zone", 23)) {
-            val type = reader.read("$THERMAL_ROOT/thermal_zone$id/type", mode)
-            val temp = reader.read("$THERMAL_ROOT/thermal_zone$id/temp", mode)
+            val type = reader.read("$THERMAL_ROOT/thermal_zone$id/type", readMode)
+            val temp = reader.read("$THERMAL_ROOT/thermal_zone$id/temp", readMode)
             if (type.isValid || temp.isValid) zones += ThermalZone(id, type, temp)
         }
-        val memory = reader.read("/proc/meminfo", mode)
-        val pressure = reader.read("/proc/pressure/memory", mode)
+        val memory = reader.read("/proc/meminfo", readMode)
+        val pressure = reader.read("/proc/pressure/memory", readMode)
         val notes = buildList {
             add("READ-ONLY ALPHA: no CPU, GPU, VM, fan or boot settings are modified.")
-            add("A Binder existing is not proof of root; UID is reported only from a verified command.")
+            add("PServerBinder presence alone is not a verified command or safe tuning capability.")
+            if (mode == AccessMode.PSERVER && !privilege.available) add("Legacy PServer protocol unverified; following sensor reads use Direct only.")
             add("Some sensors may be inaccessible under Android SELinux, even with a visible path.")
             add("GPU frequency formats/units depend on firmware; raw values are displayed.")
             add("Temperature zones are listed by sensor type; no zone is presumed to be the SoC.")
