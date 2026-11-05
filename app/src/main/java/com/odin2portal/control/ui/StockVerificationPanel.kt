@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,7 +51,7 @@ fun StockVerificationPanel(appearance: AppearanceSettings, state: DashboardState
                 catalogue?.domains?.isNotEmpty() == true && !snapshotAlreadyCaptured) {
             val c = catalogue ?: return@O2PAction
             val access = if (snapshot?.accessMode == AccessMode.PSERVER) {
-                if (snapshot.privilege.available) "Legacy PServer UID0 verified; write host unverified"
+                if (snapshot?.privilege?.available == true) "Legacy PServer UID0 verified; write host unverified"
                 else "PServer legacy probe unverified; direct fallback"
             } else "Direct read-only Android app"
             val observation = StockEvidence.capture(c, modeLabel, access)
