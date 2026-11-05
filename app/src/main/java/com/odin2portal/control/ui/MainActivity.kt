@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val sections = listOf("Overview", "Monitor", "Sessions", "Appearance", "Diagnostics")
+private val sections = listOf("Overview", "Monitor", "Sessions", "Studio", "Appearance", "Diagnostics")
 
 @Composable
 private fun ControlCenter(
@@ -86,7 +86,7 @@ private fun ControlCenter(
                     Spacer(Modifier.weight(1f))
                     Text(if (gameplay.running) "●  SESSION ACTIVE" else "●  READ ONLY",
                         style = MaterialTheme.typography.labelSmall, color = appearance.colors.muted)
-                    Text("Odin 2 Portal  ·  v0.4", style = MaterialTheme.typography.labelSmall,
+                    Text("Odin 2 Portal  ·  v0.6", style = MaterialTheme.typography.labelSmall,
                         color = appearance.colors.muted)
                 }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -160,6 +160,7 @@ private fun ScreenContent(
                 manualLabel = live.sessionLabel
             )
         }
+        "Studio" -> PerformanceStudioPage(appearance, state, refresh)
         "Appearance" -> AppearancePage(appearance)
         "Diagnostics" -> DiagnosticsPage(state, appearance, refresh, export)
     }
