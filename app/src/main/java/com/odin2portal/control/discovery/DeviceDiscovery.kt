@@ -50,6 +50,7 @@ class DeviceDiscovery(private val reader: HardwareReader = HardwareReader()) {
         }
         val gpuNames = listOf(
             "gpu_busy_percentage", "gpubusy", "gpuclk", "max_gpuclk", "min_gpuclk",
+            "gpu_available_frequencies", "max_pwrlevel", "min_pwrlevel", "num_pwrlevels",
             "devfreq/cur_freq", "devfreq/min_freq", "devfreq/max_freq",
             "devfreq/available_frequencies", "devfreq/governor"
         )
