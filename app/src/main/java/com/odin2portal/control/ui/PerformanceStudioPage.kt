@@ -95,12 +95,14 @@ fun PerformanceStudioPage(
                 style = MaterialTheme.typography.bodySmall, color = appearance.colors.muted)
         }
 
+        StockVerificationPanel(appearance, state)
+
         O2PPanel(appearance) {
             Text("BUILT-IN PROFILES", style = MaterialTheme.typography.titleMedium)
             StudioPreset.entries.forEach { preset ->
                 O2PAction(
                     when (preset) {
-                        StudioPreset.STOCK -> "Stock · 100% (default)"
+                        StudioPreset.STOCK -> "Stock reference · observed 100%"
                         StudioPreset.LIGHT -> "Light Underclock"
                         StudioPreset.MODERATE -> "Moderate Underclock"
                         StudioPreset.STRONG -> "Strong Underclock"
@@ -142,7 +144,7 @@ fun PerformanceStudioPage(
             Text("FREQUENCY LIMIT PREVIEW", style = MaterialTheme.typography.titleMedium)
             Text(
                 when {
-                    editingStock -> "Stock · OEM-managed maximums. Read-only reference."
+                    editingStock -> "Stock candidate · observed ceilings ONLY; not OEM-verified."
                     selectedPreset != null -> selectedPreset.description
                     custom != null -> custom.name
                     else -> "Select a profile"
