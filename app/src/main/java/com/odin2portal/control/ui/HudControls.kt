@@ -129,6 +129,22 @@ fun HudControls(appearance: AppearanceSettings) {
             Slider(value = settings.scale, onValueChange = {
                 settings.changeScale(it)
             }, valueRange = .8f..1.3f, onValueChangeFinished = { applyChanges() })
+            O2PAction("Recenter HUD · reset to free positioning", appearance,
+                Modifier.fillMaxWidth()) {
+                settings.recenterBothOrientations()
+                applyChanges()
+            }
+            if (session.running) {
+                Text("HUD window state: " + (session.hudDiagnostic ?: "Waiting for a sample"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = appearance.colors.muted)
+                Text(
+                    "An attached window is not proof the game displays it. " +
+                        "Android or the game can hide third-party overlays.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = appearance.colors.muted
+                )
+            }
             if (session.running) {
                 O2PAction(if (settings.floatingVisible) "Hide floating HUD" else "Show floating HUD",
                     appearance, Modifier.fillMaxWidth()) {
