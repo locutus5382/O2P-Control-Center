@@ -191,6 +191,28 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
         }
     }
 
+    /**
+     * Diagnostic, not a visibility assertion: Android may suppress an attached
+     * TYPE_APPLICATION_OVERLAY while the foreground app is protected/immersive.
+     * There is no trusted public API to confirm on-screen pixels of this window.
+     */
+    fun diagnosticStatus(): String {
+        if (!Settings.canDrawOverlays(context)) return "No Display over other apps permission"
+        if (settings.mode == HudDisplayMode.NOTIFICATION_ONLY) return "Notification-only mode"
+        if (!settings.floatingVisible) return "Floating HUD hidden by user"
+        if (context.getSystemService(PowerManager::class.java)?.isInteractive == false)
+            return "HUD hidden because screen is not interactive"
+        if (context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true)
+            return "HUD hidden on lockscreen"
+        val view = container ?: return lastError ?: "Overlay window not attached"
+        val lp = params
+        return if (view.isAttachedToWindow && lp != null) {
+            "Window attached at (" + lp.x + "," + lp.y + ")" +
+                ", " + view.width + "x" + view.height +
+                ". Actual visibility above games cannot be verified by Android."
+        } else lastError ?: "Overlay window not attached"
+    }
+
     fun hide() {
         val view = container
         container = null
