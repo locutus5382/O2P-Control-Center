@@ -18,7 +18,9 @@ data class StockDomainObservation(
     val observedCeiling: Long,
     val supported: List<Long>,
     val currentClock: Long?,
-    val maxHardwareReported: Long?
+    val maxHardwareReported: Long?,
+    val reportedRuntimeCeiling: Long? = null,
+    val reportedRuntimeMinimum: Long? = null
 )
 
 enum class EvidenceStatus { NO_CAPTURES, SINGLE_CAPTURE, TOO_SOON, INCOMPLETE, CHANGED, STABLE_OBSERVED }
@@ -46,7 +48,8 @@ object StockEvidence {
             accessNote = accessNote.take(160),
             domains = catalogue.domains.map {
                 StockDomainObservation(it.id, it.type, it.observedCeiling, it.supported,
-                    it.currentClock, it.maxHardwareReported)
+                    it.currentClock, it.maxHardwareReported,
+                    it.reportedRuntimeCeiling, it.reportedRuntimeMinimum)
             }
         )
     }
@@ -95,6 +98,12 @@ object StockEvidence {
                 if (a.maxHardwareReported != b.maxHardwareReported ||
                     b.maxHardwareReported != c.maxHardwareReported)
                     changes += id + ": reported hardware maximum changed"
+                if (a.reportedRuntimeCeiling != b.reportedRuntimeCeiling ||
+                    b.reportedRuntimeCeiling != c.reportedRuntimeCeiling)
+                    changes += id + ": effective runtime maximum changed"
+                if (a.reportedRuntimeMinimum != b.reportedRuntimeMinimum ||
+                    b.reportedRuntimeMinimum != c.reportedRuntimeMinimum)
+                    changes += id + ": effective runtime minimum changed"
             }
         }
         if (changes.isNotEmpty())
@@ -103,14 +112,22 @@ object StockEvidence {
 
         val cpuCount = after.values.count { it.type == DomainType.CPU_KHZ }
         val gpuCount = after.values.count { it.type == DomainType.GPU_HZ }
-        if (cpuCount != 3 || gpuCount != 1)
+        val missingLimits = after.values.filter {
+            it.reportedRuntimeCeiling == null
+        }.map { it.id }
+        if (cpuCount != 3 || gpuCount != 1 || missingLimits.isNotEmpty())
             return StockEvidenceReview(EvidenceStatus.INCOMPLETE,
-                "Stable observations, but only " + cpuCount + "/3 CPU policies and " +
-                    gpuCount + "/1 GPU domains are covered.",
-                listOf("Incomplete OEM Stock evidence; cannot enable writes."))
+                "Stable listed OPPs, but only " + cpuCount + "/3 CPU policies and " +
+                    gpuCount + "/1 GPU domains are covered, and " +
+                    missingLimits.size + " runtime maximum(s) are unreadable.",
+                listOf(
+                    "Missing runtime maxima: " +
+                        (if (missingLimits.isEmpty()) "none" else missingLimits.joinToString(", ")),
+                    "No OEM Stock baseline verified. No writes allowed."
+                ))
 
         return StockEvidenceReview(EvidenceStatus.STABLE_OBSERVED,
-            "Matching limits observed twice. OEM Stock is still UNVERIFIED.",
+            "Matching reported maxima and listed OPPs observed twice. OEM Stock is still UNVERIFIED.",
             after.values.sortedBy { it.id }.map {
                 val divisor = if (it.type == DomainType.CPU_KHZ) 1000.0 else 1_000_000.0
                 it.id + ": " + String.format(Locale.US, "%.1f MHz", it.observedCeiling / divisor)
@@ -142,6 +159,11 @@ object StockEvidence {
                         " | current=" + (domain.currentClock?.toString() ?: "unavailable") +
                         " | hardwareMax=" +
                         (domain.maxHardwareReported?.toString() ?: "unavailable") +
+                        " | runtimeMax=" +
+                        (domain.reportedRuntimeCeiling?.toString() ?: "unavailable") +
+                        " | runtimeMin=" +
+                        (domain.reportedRuntimeMinimum?.toString() ?: "unavailable") +
+                        " | highestListedOPP=" + domain.observedCeiling +
                         " | OPPs=" + domain.supported.joinToString(","))
                 }
             }

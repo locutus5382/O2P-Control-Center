@@ -10,12 +10,14 @@ class StockEvidenceTest {
         val cpus = listOf(0, 3, 7).map { index ->
             FrequencyDomain("cpu:policy" + index, "CPU " + index, DomainType.CPU_KHZ,
                 listOf(500000L, 750000L, cpuLimit).distinct().sorted(), cpuLimit,
-                750000L, cpuLimit, "test CPU sysfs")
+                750000L, cpuLimit, "test CPU sysfs",
+                reportedRuntimeCeiling = cpuLimit)
         }
         val gpu = if (includeGpu) listOf(
             FrequencyDomain("gpu:kgsl", "Adreno", DomainType.GPU_HZ,
                 listOf(200000000L, 400000000L, 600000000L), 600000000L,
-                400000000L, 600000000L, "test GPU sysfs")) else emptyList()
+                400000000L, 600000000L, "test GPU sysfs",
+                reportedRuntimeCeiling = 600000000L)) else emptyList()
         return StudioCatalogue("Portal", time, "fingerprint-1", cpus + gpu)
     }
 
@@ -93,4 +95,17 @@ class StockEvidenceTest {
         assertNull(StockEvidence.capture(catalog().copy(domains = emptyList()),
             "Standard", "Direct"))
     }
+    @Test fun observedStepsWithUnreadableCpuRuntimeLimitAreNotCompleteStockEvidence() {
+        val base = catalog()
+        val censored = base.copy(domains = base.domains.map {
+            if (it.id == "cpu:policy0") it.copy(reportedRuntimeCeiling = null) else it
+        })
+        val later = censored.copy(capturedAt = 130000L)
+        val outcome = StockEvidence.review(later,
+            listOf(capture(censored), capture(later)), "Standard")
+        assertEquals(EvidenceStatus.INCOMPLETE, outcome.status)
+        assertTrue(outcome.details.joinToString().contains("cpu:policy0"))
+        assertFalse(outcome.isStockVerified)
+    }
+
 }

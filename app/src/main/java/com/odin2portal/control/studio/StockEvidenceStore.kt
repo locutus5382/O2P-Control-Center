@@ -35,7 +35,9 @@ class StockEvidenceStore(context: Context) {
                     domains += StockDomainObservation(
                         id, type, ceiling, frequencies,
                         d.optLong("clock", -1L).takeIf { it > 0L },
-                        d.optLong("hwMax", -1L).takeIf { it > 0L }
+                        d.optLong("hwMax", -1L).takeIf { it > 0L },
+                        d.optLong("runtimeMax", -1L).takeIf { it > 0L },
+                        d.optLong("runtimeMin", -1L).takeIf { it > 0L }
                     )
                 }
             }
@@ -80,6 +82,8 @@ class StockEvidenceStore(context: Context) {
                     .put("ceiling", domain.observedCeiling)
                     .put("clock", domain.currentClock ?: -1L)
                     .put("hwMax", domain.maxHardwareReported ?: -1L)
+                    .put("runtimeMax", domain.reportedRuntimeCeiling ?: -1L)
+                    .put("runtimeMin", domain.reportedRuntimeMinimum ?: -1L)
                     .put("opps", opps))
             }
             arr.put(JSONObject()

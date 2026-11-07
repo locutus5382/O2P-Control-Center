@@ -166,7 +166,7 @@ fun PerformanceStudioPage(
                             Text(domain.label, style = MaterialTheme.typography.labelLarge)
                             Text(
                                 "Current " + (domain.currentClock?.let(domain::mhz) ?: "unavailable")
-                                    + " · observed cap " + domain.mhz(domain.observedCeiling),
+                                    + " · highest listed step " + domain.mhz(domain.observedCeiling),
                                 color = appearance.colors.muted,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -176,6 +176,16 @@ fun PerformanceStudioPage(
                     }
                     Text(domain.mhz(domain.supported[index]),
                         fontWeight = FontWeight.SemiBold, color = appearance.colors.ink)
+                    Text("Reported scaling maximum: " +
+                        (domain.reportedRuntimeCeiling?.let(domain::mhz) ?: "not readable") +
+                        " · reported scaling minimum: " +
+                        (domain.reportedRuntimeMinimum?.let(domain::mhz) ?: "not readable"),
+                        color = appearance.colors.muted,
+                        style = MaterialTheme.typography.bodySmall)
+                    domain.referenceWarning?.let { warning ->
+                        Text(warning, color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                     Slider(
                         value = index.toFloat(),
                         onValueChange = { v ->
@@ -191,12 +201,12 @@ fun PerformanceStudioPage(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(domain.mhz(domain.supported.first()), color = appearance.colors.muted,
                             style = MaterialTheme.typography.labelSmall)
-                        Text("Observed ceiling " + domain.mhz(domain.observedCeiling),
+                        Text("Highest listed step " + domain.mhz(domain.observedCeiling),
                             color = appearance.colors.muted, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
-            Text("Available steps are taken from exposed kernel tables. This preview never interpolates unsupported frequencies.",
+            Text("Slider steps come from exposed kernel tables, never estimated values. The highest step is not proof of an OEM Stock ceiling.",
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
             validation?.let { Text("Preview incomplete: " + it, color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall) }
