@@ -37,6 +37,7 @@ data class GameplayStatus(
     val attribution: String = "Unknown",
     val intervalsSaved: Int = 0,
     val latestSample: MonitorSample? = null,
+    val hudDiagnostic: String? = null,
     val message: String? = null
 )
 
@@ -87,8 +88,11 @@ class GameplayMonitorService : Service() {
                     hudSettings.refresh()
                 }
                 hudOverlay.render(GameplayRuntime.state.value.latestSample)
+                GameplayRuntime.update(GameplayRuntime.state.value.copy(
+                    hudDiagnostic = hudOverlay.diagnosticStatus()
+                ))
                 updateNotification("O2P gameplay recording",
-                    if (hudSettings.floatingVisible) "HUD visible" else "HUD hidden")
+                    if (hudSettings.floatingVisible) "HUD requested" else "HUD hidden")
             } else {
                 stopSelf()
             }
@@ -184,6 +188,7 @@ class GameplayMonitorService : Service() {
                         attribution = app.attribution.description,
                         intervalsSaved = persistedCount.toInt(),
                         latestSample = sample,
+                        hudDiagnostic = hudOverlay.diagnosticStatus(),
                         message = hudOverlay.lastError ?: current.message
                     ))
                     val elapsed = SystemClock.elapsedRealtime()
