@@ -11,8 +11,8 @@ android {
         applicationId = "com.odin2portal.control"
         minSdk = 31
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.6.0-alpha2"
+        versionCode = 10
+        versionName = "0.6.0-alpha3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
