@@ -72,6 +72,18 @@ class HudPreferences(context: Context) {
         return prefs.getFloat(prefix + "_x", .75f).coerceIn(0f, 1f) to
             prefs.getFloat(prefix + "_y", .10f).coerceIn(0f, 1f)
     }
+    /** Explicit recovery action; does not change permissions or bypass protected screens. */
+    fun recenterBothOrientations() {
+        prefs.edit()
+            .putFloat("landscape_x", .5f).putFloat("landscape_y", .20f)
+            .putFloat("portrait_x", .5f).putFloat("portrait_y", .20f)
+            .putString("dock", HudDock.FREE.name)
+            .putBoolean("visible", true)
+            .apply()
+        dock = HudDock.FREE
+        floatingVisible = true
+    }
+
     fun savePosition(landscape: Boolean, x: Float, y: Float) {
         val prefix = if (landscape) "landscape" else "portrait"
         prefs.edit().putFloat(prefix + "_x", x.coerceIn(0f, 1f))
