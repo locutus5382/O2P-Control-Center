@@ -19,7 +19,11 @@ data class FrequencyDomain(
     val observedCeiling: Long,
     val currentClock: Long?,
     val maxHardwareReported: Long?,
-    val source: String
+    val source: String,
+    // Separate kernel readouts from the last exposed step. Neither authenticates OEM Stock.
+    val reportedRuntimeCeiling: Long? = null,
+    val reportedRuntimeMinimum: Long? = null,
+    val referenceWarning: String? = null
 ) {
     init {
         require(supported == supported.sorted().distinct() && supported.all { it > 0 })
@@ -44,8 +48,8 @@ data class StudioCatalogue(
 ) {
     val hasVerifiedStockBaseline: Boolean = false
     fun hardwareNote() = if (domains.isEmpty())
-        "No complete CPU/GPU frequency tables readable. Export diagnostics and test PServer first."
-    else "Read-only: these are discovered frequencies and current ceiling candidates; OEM Stock has NOT been verified."
+        "No readable CPU/GPU operating-point tables. Export diagnostics and verify PServer."
+    else "Read-only: sliders use listed frequency steps. A reported hardware/firmware maximum may be higher or unavailable. OEM Stock is NOT verified."
 }
 
 object StudioDiscovery {
@@ -68,20 +72,41 @@ object StudioDiscovery {
             val id = policy.name
             if (!id.matches(Regex("policy\\d+"))) continue
             val table = candidates(policy.availableKHz.value, 50_000, 5_000_000)
-            val observed = policy.maxKHz.value?.trim()?.toLongOrNull() ?: continue
-            val hwMax = policy.hardwareMaxKHz.value?.trim()?.toLongOrNull()
-            val allowed = table.filter { it <= observed && (hwMax == null || it <= hwMax) }
-            if (allowed.size < 2 || observed !in allowed) continue
+            val runtimeMax = policy.maxKHz.value?.trim()?.toLongOrNull()?.takeIf { it > 0L }
+            val runtimeMin = policy.minKHz.value?.trim()?.toLongOrNull()?.takeIf { it > 0L }
+            val hwMax = policy.hardwareMaxKHz.value?.trim()?.toLongOrNull()?.takeIf { it > 0L }
+            val allowed = table.filter { step ->
+                (runtimeMax == null || step <= runtimeMax) &&
+                    (hwMax == null || step <= hwMax)
+            }
+            // CPU policy0 on the real Portal does not expose scaling_max_freq;
+            // policies3/7 report maxima above their highest listed OPP.
+            // Neither case is grounds for hiding genuine read-only frequency steps.
+            if (allowed.size < 2) continue
+            val previewTop = allowed.last()
+            val mismatch = when {
+                runtimeMax == null -> "Effective scaling_max_freq is unreadable; preview cap is NOT verified OEM Stock."
+                runtimeMax !in table ->
+                    "Reported scaling_max_freq " + (runtimeMax / 1000.0) +
+                    " MHz is not in the exposed OPP list; extra/boost steps are unverified."
+                else -> null
+            }
+            val warning = listOfNotNull(mismatch,
+                if (runtimeMin == null) "Effective scaling_min_freq is unreadable; no writes allowed." else null)
+                .joinToString(" ").ifBlank { null }
             val cpuIds = policy.relatedCpus.value.orEmpty().trim()
             found += FrequencyDomain(
                 id = "cpu:" + id,
                 label = "CPU " + id + (if (cpuIds.isBlank()) "" else " · cores " + cpuIds),
                 type = DomainType.CPU_KHZ,
                 supported = allowed,
-                observedCeiling = observed,
+                observedCeiling = previewTop,
                 currentClock = policy.currentKHz.value?.trim()?.toLongOrNull(),
                 maxHardwareReported = hwMax,
-                source = policy.availableKHz.path
+                source = policy.availableKHz.path,
+                reportedRuntimeCeiling = runtimeMax,
+                reportedRuntimeMinimum = runtimeMin,
+                referenceWarning = warning
             )
         }
 
@@ -96,18 +121,27 @@ object StudioDiscovery {
             ?: from(nodes, "devfreq/max_freq")?.value?.trim()?.toLongOrNull()
         if (gpuTable.size >= 2 && currentMax != null) {
             val allowed = gpuTable.filter { it <= currentMax }
-            if (allowed.size >= 2 && currentMax in allowed) {
+            if (allowed.size >= 2) {
                 found += FrequencyDomain(
                     id = "gpu:kgsl",
                     label = "GPU · Adreno",
                     type = DomainType.GPU_HZ,
                     supported = allowed,
-                    observedCeiling = currentMax,
+                    observedCeiling = allowed.last(),
                     currentClock = from(nodes, "gpuclk")?.value?.trim()?.toLongOrNull()
                         ?: from(nodes, "devfreq/cur_freq")?.value?.trim()?.toLongOrNull(),
                     maxHardwareReported = gpuTable.maxOrNull(),
                     source = from(nodes, "gpu_available_frequencies")?.path
-                        ?: from(nodes, "devfreq/available_frequencies")?.path.orEmpty()
+                        ?: from(nodes, "devfreq/available_frequencies")?.path.orEmpty(),
+                    reportedRuntimeCeiling = currentMax,
+                    reportedRuntimeMinimum =
+                        from(nodes, "devfreq/min_freq")?.value?.trim()?.toLongOrNull(),
+                    referenceWarning =
+                        if (currentMax !in gpuTable)
+                            "Reported GPU maximum does not match a listed OPP. Review hardware power-level mapping."
+                        else if (from(nodes, "devfreq/min_freq") == null)
+                            "GPU minimum-frequency limit is unreadable; no writes allowed."
+                        else null
                 )
             }
         }
