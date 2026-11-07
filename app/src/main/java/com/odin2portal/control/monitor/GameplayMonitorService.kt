@@ -196,7 +196,12 @@ class GameplayMonitorService : Service() {
                         lastNotificationAt = elapsed
                         val title = if (app.attribution == AppAttribution.USAGE_EVENTS)
                             "Recording: " + app.label else "Recording: app unverified"
-                        updateNotification(title, persistedCount.toString() + " intervals saved")
+                        val cpu = sample[Metric.SOC_TEMP]?.display ?: "—"
+                        val gpu = sample[Metric.GPU_TEMP]?.display ?: "—"
+                        // This fallback remains readable when Android/Eden hides floating overlays.
+                        updateNotification(title,
+                            "CPU " + cpu + " · GPU " + gpu +
+                                " · " + persistedCount + " intervals")
                     }
                     delay(sampleMs)
                 }
