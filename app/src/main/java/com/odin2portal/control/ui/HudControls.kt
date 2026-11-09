@@ -129,6 +129,17 @@ fun HudControls(appearance: AppearanceSettings) {
             Slider(value = settings.scale, onValueChange = {
                 settings.changeScale(it)
             }, valueRange = .8f..1.3f, onValueChangeFinished = { applyChanges() })
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Recover HUD once after game launch", style = MaterialTheme.typography.labelLarge)
+                    Text("One automatic reattach if Eden loses foreground attribution after launch. No repeated attempts.",
+                        color = appearance.colors.muted,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = settings.autoRecoverGameLaunch, onCheckedChange = {
+                    settings.changeAutoRecoverGameLaunch(it)
+                })
+            }
             O2PAction("Recenter HUD · reset to free positioning", appearance,
                 Modifier.fillMaxWidth()) {
                 settings.recenterBothOrientations()
