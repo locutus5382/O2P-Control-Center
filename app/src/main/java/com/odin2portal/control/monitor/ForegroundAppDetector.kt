@@ -25,6 +25,7 @@ class ForegroundAppDetector(private val context: Context) {
     private var lastProcessedTime = 0L
     private var lastQueryEnd = 0L
     private var activePackage: String? = null
+    private var activeActivityClass: String? = null
 
     fun hasUsageAccess(): Boolean = try {
         appOps?.checkOpNoThrow(
@@ -39,6 +40,7 @@ class ForegroundAppDetector(private val context: Context) {
     fun current(now: Long, manualFallback: String): SessionAppContext {
         if (!hasUsageAccess()) {
             activePackage = null
+            activeActivityClass = null
             lastProcessedTime = 0L
             lastQueryEnd = 0L
             return SessionAppContext.manuallyEntered(manualFallback)
@@ -72,12 +74,26 @@ class ForegroundAppDetector(private val context: Context) {
             if (event.timeStamp <= lastProcessedTime || event.timeStamp > now) continue
             maxSeen = maxOf(maxSeen, event.timeStamp)
             val pkg = event.packageName?.takeIf { it.isNotBlank() }
+            val cls = event.className?.takeIf { it.isNotBlank() }
             when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> if (pkg != null) activePackage = pkg
+                UsageEvents.Event.ACTIVITY_RESUMED -> if (pkg != null) {
+                    activePackage = pkg
+                    activeActivityClass = cls
+                }
+                // Games can resume a second Eden Activity before the previous Activity
+                // finishes stopping. A stale STOPPED from the old Activity must not
+                // erase a newer RESUMED activity within the same package.
                 UsageEvents.Event.ACTIVITY_PAUSED,
-                UsageEvents.Event.ACTIVITY_STOPPED -> if (pkg == activePackage) activePackage = null
+                UsageEvents.Event.ACTIVITY_STOPPED -> if (pkg == activePackage &&
+                    (activeActivityClass == null || cls == activeActivityClass)) {
+                    activePackage = null
+                    activeActivityClass = null
+                }
                 UsageEvents.Event.SCREEN_NON_INTERACTIVE,
-                UsageEvents.Event.KEYGUARD_SHOWN -> activePackage = null
+                UsageEvents.Event.KEYGUARD_SHOWN -> {
+                    activePackage = null
+                    activeActivityClass = null
+                }
             }
         }
         lastProcessedTime = maxSeen
