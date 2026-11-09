@@ -1,5 +1,6 @@
 package com.odin2portal.control.domain
 
+import com.odin2portal.control.discovery.AndroidThermalEvidence
 import com.odin2portal.control.hardware.AccessMode
 import com.odin2portal.control.hardware.HardwareRead
 import com.odin2portal.control.hardware.PrivilegeStatus
@@ -36,7 +37,9 @@ data class DeviceSnapshot(
     val thermals: List<ThermalZone>,
     val memory: HardwareRead,
     val pressure: HardwareRead,
-    val diagnostics: List<String>
+    val diagnostics: List<String>,
+    val fanNodes: List<HardwareRead> = emptyList(),
+    val androidThermal: AndroidThermalEvidence? = null
 ) {
     fun diagnosticText(): String = buildString {
         appendLine("O2P Control Center — Read-only diagnostic capture")
@@ -57,6 +60,14 @@ data class DeviceSnapshot(
             appendLine("zone${zone.index}: ${zone.type.value ?: "unknown"} / ${zone.readableTemperature()}")
             appendLine(zone.temperature.report())
         }
+        appendLine("\nFan / hwmon (READ ONLY):")
+        if (fanNodes.isEmpty()) appendLine("No readable fan tachometer/PWM interfaces found")
+        fanNodes.forEach { appendLine(it.report()) }
+        appendLine("\nAndroid thermal:")
+        appendLine("Status: " + (androidThermal?.statusLabel ?: "UNAVAILABLE") +
+            " (" + (androidThermal?.statusReason ?: "no API capture") + ")")
+        appendLine("Headroom: " + (androidThermal?.headroomLabel ?: "UNAVAILABLE") +
+            " (" + (androidThermal?.headroomReason ?: "no API capture") + ")")
         appendLine("\nMemory:")
         appendLine(memory.report())
         appendLine("PSI: ${pressure.value ?: pressure.error ?: "unavailable"}")

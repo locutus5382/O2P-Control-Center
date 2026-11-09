@@ -9,6 +9,11 @@ import android.os.Parcel;
 import android.os.Process;
 import android.os.SystemClock;
 import android.os.UserHandle;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
+import java.io.FileDescriptor;
+import java.nio.charset.StandardCharsets;
 import java.io.BufferedReader;
 import java.io.FileReader;
 
@@ -21,13 +26,18 @@ import java.io.FileReader;
  */
 public final class O2PReadHostMain {
     public static final String ACTION = "com.odin2portal.control.READ_HOST_HANDOFF";
-    public static final String DESCRIPTOR = "com.odin2portal.control.IReadHostV1";
+    public static final String DESCRIPTOR = "com.odin2portal.control.IReadHostV2";
     public static final String CALLBACK = "com.odin2portal.control.IReadHostProofV1";
     public static final int MAGIC = 0x4f325031;
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
     public static final int PING = 1;
     public static final int READ = 2;
     public static final int STOP = 3;
+    public static final int READ_OK = 0;
+    public static final int READ_DENIED = 1;
+    public static final int READ_NOT_FOUND = 2;
+    public static final int READ_EMPTY = 3;
+    public static final int READ_ERROR = 4;
 
     /** Exact paths only: client may NOT supply a path or a shell command. */
     private static final String[] PATHS = {
@@ -117,8 +127,12 @@ public final class O2PReadHostMain {
                         readDone = true;
                         reply.writeInt(PATHS.length);
                         for (String path : PATHS) {
+                            NodeResult result = readFixedPath(path);
                             reply.writeString(path);
-                            reply.writeString(readFixedPath(path));
+                            reply.writeInt(result.status);
+                            reply.writeString(result.value);
+                            reply.writeInt(result.errno);
+                            reply.writeString(result.reason);
                         }
                         return true;
                     case STOP:
@@ -138,13 +152,48 @@ public final class O2PReadHostMain {
             }
         }
 
-        private String readFixedPath(String path) {
-            try (BufferedReader input = new BufferedReader(new FileReader(path))) {
-                String line = input.readLine();
-                if (line == null || line.length() > 512) return "UNAVAILABLE: empty/large";
-                return line.replace('\n', ' ').replace('\r', ' ').trim();
-            } catch (Exception exception) {
-                return "UNAVAILABLE: " + exception.getClass().getSimpleName();
+        private static final class NodeResult {
+            final int status;
+            final String value;
+            final int errno;
+            final String reason;
+
+            NodeResult(int status, String value, int errno, String reason) {
+                this.status = status;
+                this.value = value;
+                this.errno = errno;
+                this.reason = reason;
+            }
+        }
+
+        private NodeResult readFixedPath(String path) {
+            FileDescriptor descriptor = null;
+            try {
+                descriptor = Os.open(path, OsConstants.O_RDONLY | OsConstants.O_CLOEXEC, 0);
+                byte[] buffer = new byte[1024];
+                int count = Os.read(descriptor, buffer, 0, buffer.length);
+                if (count <= 0)
+                    return new NodeResult(READ_EMPTY, null, 0, "Empty sysfs response");
+                String text = new String(buffer, 0, count, StandardCharsets.UTF_8).trim();
+                if (text.length() == 0)
+                    return new NodeResult(READ_EMPTY, null, 0, "Whitespace-only response");
+                if (text.length() > 512)
+                    return new NodeResult(READ_ERROR, null, 0, "Value exceeded 512 characters");
+                return new NodeResult(READ_OK, text, 0, "");
+            } catch (ErrnoException error) {
+                int err = error.errno;
+                int status = err == OsConstants.EACCES || err == OsConstants.EPERM
+                    ? READ_DENIED
+                    : err == OsConstants.ENOENT ? READ_NOT_FOUND : READ_ERROR;
+                return new NodeResult(status, null, err,
+                    "Linux errno " + err);
+            } catch (Exception error) {
+                return new NodeResult(READ_ERROR, null, 0,
+                    "Exception: " + error.getClass().getSimpleName());
+            } finally {
+                if (descriptor != null) {
+                    try { Os.close(descriptor); } catch (Exception ignored) {}
+                }
             }
         }
     }

@@ -6,6 +6,8 @@ package com.odin2portal.control.hardware
 import android.annotation.SuppressLint
 import android.os.IBinder
 import android.os.Parcel
+import android.os.DeadObjectException
+import java.lang.reflect.Method
 
 /**
  * PServer is a privileged firmware service. The transport is NOT a reader,
@@ -45,13 +47,57 @@ internal class PServerHostTransport(
     }
 }
 
-@SuppressLint("DiscouragedPrivateApi", "PrivateApi")
-private fun connectToFirmwarePServer(): PServerHostConnection? {
-    val service = Class.forName("android.os.ServiceManager")
-        .getMethod("checkService", String::class.java)
-        .invoke(null, "PServerBinder") as? IBinder
-    return service?.let(::FirmwarePServerConnection)
+/**
+ * Cache the ServiceManager reflection method once. Cache the Binder only while
+ * alive, invalidating it via Binder death notifications. No user shell or retry
+ * path exists. This is NOT used in the 1–2 second DirectMonitor sampling loop.
+ */
+private object FirmwarePServerService {
+    private val checkService: Method by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Class.forName("android.os.ServiceManager")
+            .getMethod("checkService", String::class.java)
+    }
+    @Volatile private var cached: IBinder? = null
+    @Volatile private var recipient: IBinder.DeathRecipient? = null
+
+    @SuppressLint("DiscouragedPrivateApi", "PrivateApi")
+    @Synchronized
+    fun resolve(): IBinder? {
+        cached?.takeIf { it.isBinderAlive }?.let { return it }
+        cached = null
+        recipient = null
+        val fresh = checkService.invoke(null, "PServerBinder") as? IBinder ?: return null
+        if (!fresh.isBinderAlive) return null
+        val death = IBinder.DeathRecipient {
+            synchronized(this) {
+                if (cached === fresh) {
+                    cached = null
+                    recipient = null
+                }
+            }
+        }
+        try {
+            fresh.linkToDeath(death, 0)
+        } catch (_: android.os.RemoteException) {
+            return null
+        }
+        cached = fresh
+        recipient = death
+        return fresh
+    }
+
+    @Synchronized
+    fun invalidate(dead: IBinder) {
+        if (cached === dead) {
+            recipient?.let { runCatching { dead.unlinkToDeath(it, 0) } }
+            cached = null
+            recipient = null
+        }
+    }
 }
+
+private fun connectToFirmwarePServer(): PServerHostConnection? =
+    FirmwarePServerService.resolve()?.let(::FirmwarePServerConnection)
 
 private class FirmwarePServerConnection(private val service: IBinder) : PServerHostConnection {
     override val alive: Boolean get() = service.isBinderAlive
@@ -60,13 +106,17 @@ private class FirmwarePServerConnection(private val service: IBinder) : PServerH
         val request = Parcel.obtain()
         val response = Parcel.obtain()
         try {
-            // Firmware protocol on tested AYN Thor:
-            // 2 UTF-16 strings preceded by int32 count; no interface token.
-            // Output is explicitly disabled; no stdout bridge.
             request.writeInt(2)
             request.writeString(command)
-            request.writeString("0")
+            request.writeString("0") // output-disabled launch-only protocol
+            // Never retry automatically after any failure or ambiguous acceptance.
             return service.transact(0, request, response, 0)
+        } catch (error: DeadObjectException) {
+            FirmwarePServerService.invalidate(service)
+            throw error
+        } catch (error: android.os.RemoteException) {
+            FirmwarePServerService.invalidate(service)
+            throw error
         } finally {
             response.recycle()
             request.recycle()

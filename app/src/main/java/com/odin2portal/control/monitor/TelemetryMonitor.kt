@@ -6,6 +6,9 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.odin2portal.control.discovery.SysfsInventory
+import com.odin2portal.control.discovery.AndroidThermalProbe
+import com.odin2portal.control.discovery.AndroidThermalEvidence
 import com.odin2portal.control.domain.Parsing
 import com.odin2portal.control.domain.SensorSelection
 import kotlinx.coroutines.CancellationException
@@ -34,7 +37,9 @@ enum class Metric(val label: String, val source: String) {
     GPU_CLOCK("GPU clock", "KGSL devfreq"),
     GPU_LOAD("GPU load", "KGSL utilization"),
     RAM("System RAM", "/proc/meminfo"),
-    FAN_RPM("Fan RPM", "hwmon tachometer if available")
+    FAN_RPM("Fan RPM", "hwmon tachometer if available"),
+    ANDROID_THERMAL_STATUS("Android thermal state", "PowerManager thermal status"),
+    THERMAL_HEADROOM("Thermal headroom", "PowerManager, not a temperature")
 }
 data class Reading(val value: String?, val detail: String = "") {
     val display: String get() = value ?: "Unavailable"
@@ -63,23 +68,43 @@ object CpuStats {
 class DirectMonitor(private val app: Application) {
     private var before: CpuStats.Times? = null
     private val priorCores = mutableMapOf<String, CpuStats.Times>()
+    private val namedThermals by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        SysfsInventory.monitoredThermalZones(::read)
+    }
+    private val fanTachometers by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        SysfsInventory.indices("/sys/class/hwmon", "hwmon", 31).flatMap { id ->
+            (1..4).map { "/sys/class/hwmon/hwmon$id/fan" + it + "_input" }
+        }.filter { File(it).isFile && File(it).canRead() }
+    }
+    private var thermalApiCheckedAt = 0L
+    private var thermalApi = AndroidThermalProbe.capture(app)
+
     private fun read(path: String): String? = try {
         File(path).takeIf { it.isFile && it.canRead() }?.bufferedReader()?.use { it.readText().trim().take(8192) }
     } catch (_: Exception) { null }
     private fun temp(accept: (String) -> Boolean): Reading {
-        val zones = File("/sys/class/thermal").listFiles()
-            ?.filter { it.name.matches(Regex("thermal_zone\\d+")) }?.take(128).orEmpty()
-        val readings = zones.mapNotNull { zone ->
-            val name = read(zone.path + "/type") ?: return@mapNotNull null
-            if (!accept(name)) return@mapNotNull null
-            name to Parsing.temperatureC(read(zone.path + "/temp"))
-        }
+        // Named paths are identified once. Only numeric temperatures are
+        // sampled during gameplay (not all 128 /type files every second).
+        val readings = namedThermals.filter { accept(it.type) }
+            .map { it.type to Parsing.temperatureC(read(it.temperaturePath)) }
         val peak = SensorSelection.hottest(readings, accept)
             ?: return Reading(null, "No readable, correctly named thermal sensor")
         return Reading(
             String.format(Locale.US, "%.1f °C", peak.celsius),
             "Highest of ${peak.matchingCount} named sensors · ${peak.sensor}"
         )
+    }
+    private fun androidThermalReadings(now: Long): Pair<Reading, Reading> {
+        if (now - thermalApiCheckedAt >= 5_000L || thermalApiCheckedAt == 0L) {
+            thermalApi = AndroidThermalProbe.capture(app)
+            thermalApiCheckedAt = now
+        }
+        val status = Reading(thermalApi.status?.let { thermalApi.statusLabel },
+            thermalApi.statusReason)
+        val headroom = Reading(thermalApi.headroom?.let {
+            String.format(Locale.US, "%.3f", it)
+        }, thermalApi.headroomReason)
+        return status to headroom
     }
     private fun cpuClocks(): Reading {
         val policies = File("/sys/devices/system/cpu/cpufreq").listFiles()
@@ -114,11 +139,12 @@ class DirectMonitor(private val app: Application) {
         return Reading(null, "GPU utilization not accessible")
     }
     private fun fanRpm(): Reading {
-        for (hwmon in File("/sys/class/hwmon").listFiles()?.take(32).orEmpty()) for (i in 1..4) {
-            val rpm = read(hwmon.path + "/fan" + i + "_input")?.toIntOrNull()
-            if (rpm != null && rpm in 0..50000) return Reading(rpm.toString() + " RPM", hwmon.name + "/fan" + i + "_input")
+        for (path in fanTachometers) {
+            val rpm = read(path)?.toIntOrNull()
+            if (rpm != null && rpm in 0..50000)
+                return Reading("$" + "{rpm} RPM", path)
         }
-        return Reading(null, "No tachometer; PWM is not RPM")
+        return Reading(null, "No readable fan tachometer; PWM is not RPM")
     }
     suspend fun sample(): MonitorSample = withContext(Dispatchers.IO) {
         val battery: Intent? = app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -158,6 +184,7 @@ class DirectMonitor(private val app: Application) {
                 String.format(Locale.US, "System RAM estimate · %.2f GiB total", total / 1048576.0)
             )
         else Reading(null, "System RAM not accessible")
+        val thermalApiReadings = androidThermalReadings(System.currentTimeMillis())
         MonitorSample(System.currentTimeMillis(), mapOf(
             Metric.FPS to Reading(null, "FPS backend needs on-device layer validation"),
             Metric.SOC_TEMP to temp(SensorSelection::isCpu),
@@ -172,7 +199,9 @@ class DirectMonitor(private val app: Application) {
             Metric.GPU_CLOCK to gpuClock(),
             Metric.GPU_LOAD to gpuLoad(),
             Metric.RAM to memory,
-            Metric.FAN_RPM to fanRpm()
+            Metric.FAN_RPM to fanRpm(),
+            Metric.ANDROID_THERMAL_STATUS to thermalApiReadings.first,
+            Metric.THERMAL_HEADROOM to thermalApiReadings.second
         ))
     }
 }

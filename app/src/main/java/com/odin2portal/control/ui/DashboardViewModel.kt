@@ -1,6 +1,7 @@
 package com.odin2portal.control.ui
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.odin2portal.control.discovery.DeviceDiscovery
 import com.odin2portal.control.domain.DeviceSnapshot
@@ -17,8 +18,8 @@ data class DashboardState(
     val error: String? = null
 )
 
-class DashboardViewModel : ViewModel() {
-    private val discovery = DeviceDiscovery()
+class DashboardViewModel(app: Application) : AndroidViewModel(app) {
+    private val discovery = DeviceDiscovery(context = app.applicationContext)
     private val mutable = MutableStateFlow(DashboardState())
     val state = mutable.asStateFlow()
 

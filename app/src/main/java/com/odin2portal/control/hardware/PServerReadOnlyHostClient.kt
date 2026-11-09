@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.Parcel
 import android.os.Process
+import android.os.DeadObjectException
 import com.odin2portal.control.hardware.host.O2PReadHostMain
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,25 +19,56 @@ import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipFile
 
+enum class HostNodeStatus { OBSERVED, PERMISSION_DENIED, NOT_FOUND, EMPTY, IO_ERROR }
+
+data class HostNodeRead(
+    val path: String,
+    val status: HostNodeStatus,
+    val value: String?,
+    val linuxErrno: Int?,
+    val error: String?,
+    val source: String = "PSERVER_READ_ONLY_HOST"
+)
+
 data class ReadOnlyHostResult(
     val authenticated: Boolean,
     val verifiedHostUid: Int?,
-    val fields: Map<String, String>,
-    val diagnostic: String
+    val nodes: List<HostNodeRead>,
+    val diagnostic: String,
+    val capturedAt: Long = System.currentTimeMillis()
 ) {
+    // Compatibility accessor for existing diagnostic UI; never hide failures.
+    val fields: Map<String, String> get() = nodes.associate {
+        it.path to (it.value ?: "UNAVAILABLE: " + it.status.name +
+            (it.linuxErrno?.let { n -> " errno=$n" } ?: ""))
+    }
     fun export(): String = buildString {
         appendLine("O2P PServer READ-ONLY HOST VALIDATION")
         appendLine("Authenticated privileged host: " + authenticated)
         appendLine("Verified host UID: " + (verifiedHostUid ?: "UNVERIFIED"))
         appendLine("Result: " + diagnostic)
         appendLine("No CPU/GPU/thermal/fan writes were performed.")
-        fields.forEach { (path, value) -> appendLine("$path = $value") }
+        nodes.forEach {
+            appendLine(it.path + " | " + it.status +
+                " | " + (it.value ?: "null") +
+                " | errno=" + (it.linuxErrno ?: "not available") +
+                " | error=" + (it.error ?: "none") +
+                " | source=" + it.source)
+        }
         appendLine("Do not interpret a single host read as an authenticated OEM Stock baseline.")
     }
+}
+
+/** Volatile, per-process last opt-in host test for consolidated diagnostic JSON. */
+object PServerValidationCache {
+    @Volatile var last: ReadOnlyHostResult? = null
+        private set
+    fun record(value: ReadOnlyHostResult) { last = value }
 }
 
 /**
@@ -58,18 +90,20 @@ class PServerReadOnlyHostClient(private val context: Context) {
     }
 
     suspend fun verifyReadOnly(): ReadOnlyHostResult = withContext(Dispatchers.IO) {
-        synchronized(lock) {
+        val result = synchronized(lock) {
             runCatching { verifyInternal() }.getOrElse {
-                ReadOnlyHostResult(false, null, emptyMap(),
+                ReadOnlyHostResult(false, null, emptyList(),
                     "Read-only PServer host unavailable: " +
                         it.javaClass.simpleName + ": " + (it.message ?: "unknown"))
             }
         }
+        PServerValidationCache.record(result)
+        result
     }
 
     private fun verifyInternal(): ReadOnlyHostResult {
         if (!PServerHostTransport().serviceVisible)
-            return ReadOnlyHostResult(false, null, emptyMap(),
+            return ReadOnlyHostResult(false, null, emptyList(),
                 "PServerBinder not visible or alive on this firmware")
 
         val generation = context.packageManager
@@ -98,6 +132,8 @@ class PServerReadOnlyHostClient(private val context: Context) {
         }
 
         var host: IBinder? = null
+        var deathRecipient: IBinder.DeathRecipient? = null
+        val hostDied = AtomicBoolean(false)
         try {
             val dir = File(context.codeCacheDir, "o2p-ephemeral-read-host")
                 .apply { if (!exists()) check(mkdirs()) { "Cannot create host cache" } }
@@ -129,13 +165,33 @@ class PServerReadOnlyHostClient(private val context: Context) {
                 )
             }
             host = checkNotNull(hostBinder.get()) { "Host handoff contained no Binder" }
+            val death = IBinder.DeathRecipient { hostDied.set(true) }
+            host.linkToDeath(death, 0)
+            deathRecipient = death
             val verifiedUid = authenticate(host, nonce, generation)
-            val values = readFixedValues(host, nonce, generation)
+            check(!hostDied.get()) { "Privileged host died during authentication" }
+            val readAttempt = runCatching { readFixedValues(host, nonce, generation) }
+            if (hostDied.get()) {
+                return ReadOnlyHostResult(true, verifiedUid, emptyList(),
+                    "Host UID verified, but host died during read-only capability request. " +
+                        "No hardware node was marked observed.")
+            }
+            val values = readAttempt.getOrElse { failure ->
+                return ReadOnlyHostResult(true, verifiedUid, emptyList(),
+                    "Host UID authenticated; fixed-node READ failed: " +
+                        failure.javaClass.simpleName + ": " +
+                        (failure.message ?: "unknown error").take(170))
+            }
             return ReadOnlyHostResult(true, verifiedUid, values,
-                "Authenticated single-use PServer read-only host. UID callback verified. " +
-                    "Hardware writes remain unavailable.")
+                "Authenticated read-only host. Per-node status is authoritative; " +
+                    "successful host authentication does NOT imply all nodes are readable.")
         } finally {
-            host?.let { runCatching { stop(it, nonce, generation) } }
+            host?.let { ref ->
+                runCatching { stop(ref, nonce, generation) }
+                deathRecipient?.let { recipient ->
+                    runCatching { ref.unlinkToDeath(recipient, 0) }
+                }
+            }
             runCatching { context.unregisterReceiver(receiver) }
         }
     }
@@ -187,7 +243,7 @@ class PServerReadOnlyHostClient(private val context: Context) {
     }
 
     private fun readFixedValues(host: IBinder, nonce: String,
-                                generation: Long): Map<String, String> {
+                                generation: Long): List<HostNodeRead> {
         val request = Parcel.obtain()
         val response = Parcel.obtain()
         try {
@@ -198,16 +254,39 @@ class PServerReadOnlyHostClient(private val context: Context) {
                 "Read-only host refused fixed capabilities"
             }
             val count = response.readInt()
+            if (count == -1) {
+                val hostError = response.readString()?.take(120) ?: "unknown host exception"
+                error("Privileged read-only host rejected request: " + hostError)
+            }
             check(count in 1..24) { "Unexpected host node count=$count" }
-            return buildMap {
+            val seen = mutableSetOf<String>()
+            return buildList {
                 repeat(count) {
                     val path = checkNotNull(response.readString())
-                    val value = checkNotNull(response.readString())
+                    val code = response.readInt()
+                    val value = response.readString()
+                    val errno = response.readInt()
+                    val reason = response.readString()
                     check(path.length < 160 && path.startsWith("/sys/") &&
                         path.substringAfterLast('/') in ALLOWED_PATHS &&
-                        value.length <= 512) { "Invalid read-only host response" }
-                    check(path !in this) { "Duplicate host read path" }
-                    put(path, value)
+                        (value?.length ?: 0) <= 512 &&
+                        (reason?.length ?: 0) <= 160 && seen.add(path)) {
+                        "Malformed or duplicate host read path"
+                    }
+                    val status = when (code) {
+                        O2PReadHostMain.READ_OK -> HostNodeStatus.OBSERVED
+                        O2PReadHostMain.READ_DENIED -> HostNodeStatus.PERMISSION_DENIED
+                        O2PReadHostMain.READ_NOT_FOUND -> HostNodeStatus.NOT_FOUND
+                        O2PReadHostMain.READ_EMPTY -> HostNodeStatus.EMPTY
+                        O2PReadHostMain.READ_ERROR -> HostNodeStatus.IO_ERROR
+                        else -> error("Unknown host read status $code")
+                    }
+                    check((status == HostNodeStatus.OBSERVED) ==
+                        (value != null && value.isNotBlank())) {
+                        "Host node status/value mismatch"
+                    }
+                    add(HostNodeRead(path, status, value,
+                        errno.takeIf { it > 0 }, reason?.takeIf { it.isNotBlank() }))
                 }
             }
         } finally {

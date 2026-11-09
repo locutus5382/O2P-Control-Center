@@ -1,6 +1,9 @@
 package com.odin2portal.control.ui
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.odin2portal.control.hardware.PServerReadOnlyHostClient
+import com.odin2portal.control.discovery.DiagnosticJsonExporter
 import com.odin2portal.control.domain.DeviceSnapshot
 import com.odin2portal.control.domain.Parsing
 import com.odin2portal.control.domain.Odin2PortalReference
@@ -32,6 +38,7 @@ import com.odin2portal.control.hardware.AccessMode
 import com.odin2portal.control.quick.QuickTileUpdates
 import com.odin2portal.control.monitor.GameplayRuntime
 import com.odin2portal.control.monitor.MonitorViewModel
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -292,11 +299,18 @@ private fun DiagnosticsPage(
     export: (DeviceSnapshot) -> Unit
 ) {
     val snapshot = state.result
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var hostBusy by remember { mutableStateOf(false) }
+    var hostTestMessage by remember { mutableStateOf<String?>(null) }
+    var diagnosticFeedback by remember { mutableStateOf<String?>(null) }
     var showRaw by remember { mutableStateOf(false) }
     O2PColumns(left = {
         O2PPanel(appearance) {
             Text("READ-ONLY DEVICE DISCOVERY", style = MaterialTheme.typography.titleMedium)
-            Text("Choose access manually. PServer probing now checks Binder liveness only. The authenticated read-only host is not built yet; no root or su mode.",
+            Text("Direct is a passive scan. PServer button checks Binder presence only. " +
+                "For the explicit authenticated, fixed-node host test, use Studio. " +
+                "No root/su mode or frequency writes.",
                 color = appearance.colors.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 O2PAction("Direct", appearance, Modifier.weight(1f),
@@ -312,6 +326,75 @@ private fun DiagnosticsPage(
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Text(snapshot?.privilege?.reason ?: "No diagnostic capture yet",
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+            O2PAction(if (hostBusy) "PServer host verification running…"
+                else "Verify PServer host (read-only)", appearance, Modifier.fillMaxWidth(),
+                enabled = !hostBusy) {
+                hostBusy = true
+                scope.launch {
+                    try {
+                        val result = PServerReadOnlyHostClient(context.applicationContext)
+                            .verifyReadOnly()
+                        hostTestMessage = if (result.authenticated)
+                            "Host UID " + result.verifiedHostUid +
+                                " authenticated; individual node errors are shown in JSON."
+                        else "Host not authenticated: " + result.diagnostic.take(220)
+                    } finally {
+                        hostBusy = false
+                    }
+                }
+            }
+            hostTestMessage?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = appearance.colors.muted)
+            }
+            Text("M1 READ-ONLY VALIDATION", style = MaterialTheme.typography.titleSmall)
+            snapshot?.let { captured ->
+                DiagnosticJsonExporter.gates(captured, context).forEach { gate ->
+                    StatusLine(gate.name, gate.state, appearance)
+                    if (gate.state == "BLOCKED" || gate.state == "PARTIAL") {
+                        Text(gate.detail, style = MaterialTheme.typography.labelSmall,
+                            color = appearance.colors.muted)
+                    }
+                }
+                val android = captured.androidThermal
+                StatusLine("Android thermal status",
+                    android?.statusLabel ?: "UNAVAILABLE", appearance)
+                StatusLine("Android thermal headroom",
+                    android?.headroomLabel ?: "UNAVAILABLE", appearance)
+                Text(android?.headroomReason ?: "No Android thermal API capture",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = appearance.colors.muted)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                O2PAction("Copy JSON", appearance, Modifier.weight(1f),
+                    enabled = snapshot != null) {
+                    snapshot?.let {
+                        val json = DiagnosticJsonExporter.export(it, context)
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                            as ClipboardManager
+                        clipboard.setPrimaryClip(
+                            ClipData.newPlainText("O2P Read-only Diagnostics", json))
+                        diagnosticFeedback = "Redacted JSON copied; no private device ID included."
+                    }
+                }
+                O2PAction("Share JSON", appearance, Modifier.weight(1f),
+                    enabled = snapshot != null) {
+                    snapshot?.let {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_SUBJECT,
+                                "O2P Read-only Device Capabilities JSON")
+                            putExtra(Intent.EXTRA_TEXT, DiagnosticJsonExporter.export(it))
+                        }
+                        context.startActivity(Intent.createChooser(intent,
+                            "Share read-only hardware JSON"))
+                    }
+                }
+            }
+            diagnosticFeedback?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = appearance.colors.muted)
+            }
             O2PAction("Share full diagnostic report", appearance, Modifier.fillMaxWidth(),
                 enabled = snapshot != null) { snapshot?.let(export) }
         }
@@ -344,7 +427,9 @@ private fun DiagnosticsPage(
         O2PPanel(appearance) {
             Text("SENSOR LIBRARY", style = MaterialTheme.typography.titleMedium)
             val zones = snapshot?.thermals.orEmpty()
-            Text(zones.size.toString() + " thermal zones enumerated · raw entries are deliberately hidden by default",
+            Text(zones.size.toString() + " named thermal zones enumerated; " +
+                (snapshot?.fanNodes?.count { it.isValid } ?: 0).toString() +
+                " readable fan/hwmon nodes · raw entries hidden by default",
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
             O2PAction(if (showRaw) "Hide raw sensors" else "View raw sensors",
                 appearance, Modifier.fillMaxWidth()) { showRaw = !showRaw }
@@ -352,6 +437,12 @@ private fun DiagnosticsPage(
                 zones.forEach { zone ->
                     StatusLine(zone.type.value ?: "Zone " + zone.index,
                         zone.readableTemperature(), appearance)
+                }
+                Text("FAN / HWMON (READ-ONLY)",
+                    style = MaterialTheme.typography.titleSmall)
+                snapshot?.fanNodes?.forEach { node ->
+                    StatusLine(node.path.substringAfterLast("/").take(36),
+                        node.value?.take(28) ?: "UNAVAILABLE", appearance)
                 }
                 val gpuNodes = snapshot?.gpuNodes.orEmpty()
                 Text("GPU NODES", style = MaterialTheme.typography.titleSmall)
