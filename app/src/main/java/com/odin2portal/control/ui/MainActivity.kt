@@ -592,18 +592,20 @@ private fun AppearancePage(settings: AppearanceSettings) {
     O2PColumns(left = {
         O2PPanel(settings) {
             Text("VISUAL SYSTEM", style = MaterialTheme.typography.titleMedium)
-            Text("Choose the material. Both styles recolor the entire interface.",
+            Text("Choose one of four complete visual families. All 18 colorways recolor the entire interface.",
                 color = settings.colors.muted)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                O2PAction("Liquid Glass", settings, Modifier.weight(1f),
-                    primary = settings.style == VisualStyle.GLASS) {
-                    settings.selectStyle(VisualStyle.GLASS)
-                }
-                O2PAction("Material", settings, Modifier.weight(1f),
-                    primary = settings.style == VisualStyle.MATERIAL) {
-                    settings.selectStyle(VisualStyle.MATERIAL)
+            ThemeFamily.entries.chunked(2).forEach { families ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    families.forEach { family ->
+                        O2PAction(family.shortLabel, settings, Modifier.weight(1f),
+                            primary = settings.family == family) {
+                            settings.selectFamily(family)
+                        }
+                    }
                 }
             }
+            Text(settings.family.description, color = settings.colors.muted,
+                style = MaterialTheme.typography.bodySmall)
             Text("COLORWAY  ·  " + settings.accent.label.uppercase(Locale.ROOT),
                 style = MaterialTheme.typography.labelSmall, color = settings.colors.muted)
             O2P_ACCENTS.chunked(6).forEach { row ->
@@ -644,15 +646,15 @@ private fun AppearancePage(settings: AppearanceSettings) {
     }, right = {
         O2PPanel(settings) {
             Text("LIVE PREVIEW", style = MaterialTheme.typography.titleMedium)
-            Text("Glass reacts to your touch; the whole background and surfaces shift with your colorway.",
+            Text(settings.family.label + " · Entire background, surfaces, buttons and focus borders share the selected colorway.",
                 color = settings.colors.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetricTile(settings, "CPU", "32.9°C", "Preview only", Modifier.weight(1f))
-                MetricTile(settings, "GPU", "30.6°C", "Preview only", Modifier.weight(1f))
+                MetricTile(settings, "CPU", "—", "Visual preview", Modifier.weight(1f))
+                MetricTile(settings, "GPU", "—", "Visual preview", Modifier.weight(1f))
             }
             O2PAction("Tap to see the light travel", settings,
                 Modifier.fillMaxWidth(), primary = true) {}
-            Text("Appearance preview values are illustrative—not device measurements.",
+            Text("Preview uses placeholders—not live device measurements.",
                 color = settings.colors.muted, style = MaterialTheme.typography.labelSmall)
         }
     })
