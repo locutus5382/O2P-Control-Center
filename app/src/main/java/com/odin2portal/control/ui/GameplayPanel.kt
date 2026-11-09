@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import com.odin2portal.control.quick.QuickTileInstallActions
 import com.odin2portal.control.monitor.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -166,6 +167,7 @@ fun GameplayPanel(
                     }
                 }
             }
+            QuickTileInstallActions(appearance, session = true)
             Text("Select live and history intervals in Monitor before starting.",
                 style = MaterialTheme.typography.bodySmall,
                 color = appearance.colors.muted)

@@ -29,6 +29,8 @@ class HudPreferences(context: Context) {
         private set
     var floatingVisible by mutableStateOf(prefs.getBoolean("visible", true))
         private set
+    var autoRecoverGameLaunch by mutableStateOf(prefs.getBoolean("recover_game_launch_once", true))
+        private set
 
     fun refresh() {
         mode = readMode()
@@ -39,6 +41,7 @@ class HudPreferences(context: Context) {
         scale = prefs.getFloat("scale", 1f).coerceIn(.8f, 1.3f)
         customMetrics = parseMetrics(prefs.getString("metrics", null))
         floatingVisible = prefs.getBoolean("visible", true)
+        autoRecoverGameLaunch = prefs.getBoolean("recover_game_launch_once", true)
     }
     private fun readMode() = enumValue(prefs.getString("mode", null), HudDisplayMode.FLOATING_WITH_NOTIFICATION)
     private fun readDock() = enumValue(prefs.getString("dock", null), HudDock.FREE)
@@ -62,6 +65,10 @@ class HudPreferences(context: Context) {
         val changed = if (selected) customMetrics + metric else customMetrics - metric
         customMetrics = changed
         prefs.edit().putString("metrics", changed.joinToString(",") { it.name }).apply()
+    }
+    fun changeAutoRecoverGameLaunch(value: Boolean) {
+        autoRecoverGameLaunch = value
+        prefs.edit().putBoolean("recover_game_launch_once", value).apply()
     }
     fun changeFloatingVisible(value: Boolean) {
         floatingVisible = value

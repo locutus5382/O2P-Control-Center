@@ -29,6 +29,7 @@ import com.odin2portal.control.domain.Parsing
 import com.odin2portal.control.domain.Odin2PortalReference
 import com.odin2portal.control.domain.SensorSelection
 import com.odin2portal.control.hardware.AccessMode
+import com.odin2portal.control.quick.QuickTileUpdates
 import com.odin2portal.control.monitor.GameplayRuntime
 import com.odin2portal.control.monitor.MonitorViewModel
 import java.util.Locale
@@ -40,9 +41,10 @@ class MainActivity : ComponentActivity() {
             val appearance = rememberAppearanceSettings()
             val model: DashboardViewModel = viewModel()
             val state by model.state.collectAsState()
+            val initialSection = intent?.getStringExtra("o2p_open_section") ?: "Overview"
             O2PTheme(appearance) {
                 O2PBackdrop(appearance) {
-                    ControlCenter(state, appearance, model::refresh) { snapshot ->
+                    ControlCenter(initialSection, state, appearance, model::refresh) { snapshot ->
                         val intent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_SUBJECT, "O2P hardware diagnostics")
@@ -60,12 +62,13 @@ private val sections = listOf("Overview", "Monitor", "Sessions", "Studio", "Appe
 
 @Composable
 private fun ControlCenter(
+    initialSection: String,
     state: DashboardState,
     appearance: AppearanceSettings,
     refresh: (AccessMode) -> Unit,
     export: (DeviceSnapshot) -> Unit
 ) {
-    var section by rememberSaveable { mutableStateOf("Overview") }
+    var section by rememberSaveable { mutableStateOf(initialSection.takeIf(sections::contains) ?: "Overview") }
     val monitor: MonitorViewModel = viewModel()
     val live by monitor.state.collectAsState()
     val gameplay by GameplayRuntime.state.collectAsState()
