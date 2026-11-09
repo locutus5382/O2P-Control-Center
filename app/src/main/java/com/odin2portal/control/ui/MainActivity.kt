@@ -293,7 +293,7 @@ private fun DiagnosticsPage(
     O2PColumns(left = {
         O2PPanel(appearance) {
             Text("READ-ONLY DEVICE DISCOVERY", style = MaterialTheme.typography.titleMedium)
-            Text("Choose access manually. PServer access is only available when a command is actually verified. No root or su option.",
+            Text("Choose access manually. PServer probing now checks Binder liveness only. The authenticated read-only host is not built yet; no root or su mode.",
                 color = appearance.colors.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 O2PAction("Direct", appearance, Modifier.weight(1f),
