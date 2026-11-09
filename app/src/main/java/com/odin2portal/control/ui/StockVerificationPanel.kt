@@ -51,8 +51,8 @@ fun StockVerificationPanel(appearance: AppearanceSettings, state: DashboardState
                 catalogue?.domains?.isNotEmpty() == true && !snapshotAlreadyCaptured) {
             val c = catalogue ?: return@O2PAction
             val access = if (snapshot?.accessMode == AccessMode.PSERVER) {
-                if (snapshot?.privilege?.available == true) "Legacy PServer UID0 verified; write host unverified"
-                else "PServer legacy probe unverified; direct fallback"
+                if (snapshot?.privilege?.available == true) "PServer host identity would be verified; write host unverified"
+                else "PServer service probe only; no authenticated host, direct fallback"
             } else "Direct read-only Android app"
             val observation = StockEvidence.capture(c, modeLabel, access)
             message = if (observation != null && store.add(observation)) {
