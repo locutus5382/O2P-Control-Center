@@ -7,6 +7,7 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.odin2portal.control.monitor.GameplayRuntime
+import com.odin2portal.control.monitor.SessionReliabilityJournal
 
 /** Two native Android Quick Settings tiles; neither is a privileged tuning path. */
 abstract class O2PBaseTileService : TileService() {
@@ -91,7 +92,11 @@ class SessionQuickTileService : O2PBaseTileService() {
             when {
                 current.running -> "Recording · tap for Stop / Refresh HUD"
                 current.starting -> "Starting · tap for controls"
-                else -> "Stopped · tap to Start"
+                else -> {
+                    val journal = SessionReliabilityJournal(applicationContext)
+                    if (journal.lease() != null) "Recording interrupted/recovery pending · tap"
+                    else "Stopped · tap to Start"
+                }
             },
             active = current.running
         )

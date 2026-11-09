@@ -62,6 +62,15 @@ class GameSessionStore(context: Context) :
         error("No upgrades yet; do not destroy user recordings")
     }
 
+    /** Reads the existing recording row. No inserts or mutation on a system restart. */
+    fun isStillRecording(id: Long): Boolean {
+        if (id <= 0L) return false
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM game_sessions WHERE id=? AND status='RECORDING' LIMIT 1",
+            arrayOf(id.toString())
+        ).use { return it.moveToFirst() }
+    }
+
     fun start(startTime: Long, manualLabel: String, intervalMs: Long): Long {
         require(RecordingIntervals.valid(intervalMs))
         val content = ContentValues().apply {

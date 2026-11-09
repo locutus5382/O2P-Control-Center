@@ -61,6 +61,7 @@ class GameplayMonitorService : Service() {
     private lateinit var collector: DirectMonitor
     private lateinit var hudSettings: HudPreferences
     private lateinit var hudOverlay: HudOverlay
+    private lateinit var journal: SessionReliabilityJournal
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -71,6 +72,8 @@ class GameplayMonitorService : Service() {
         collector = DirectMonitor(application)
         hudSettings = HudPreferences(applicationContext)
         hudOverlay = HudOverlay(this, hudSettings)
+        journal = SessionReliabilityJournal(applicationContext)
+        journal.event("SERVICE_CREATED")
         val channel = NotificationChannel(
             CHANNEL_ID, "O2P Gameplay Monitoring", NotificationManager.IMPORTANCE_LOW
         ).apply {
@@ -110,28 +113,48 @@ class GameplayMonitorService : Service() {
             } else {
                 stopSelf()
             }
-            return START_NOT_STICKY
+            return if (job?.isActive == true) START_STICKY else START_NOT_STICKY
         }
         if (intent?.action == ACTION_STOP) {
+            journal.stopRequested()
             hudOverlay.hide()
             stopping = true
             job?.cancel() ?: run {
                 GameplayRuntime.update(GameplayStatus(message = "Recording stopped"))
                 stopForeground(STOP_FOREGROUND_REMOVE)
+                journal.event("STOP_WITHOUT_ACTIVE_JOB")
                 stopSelf()
             }
             return START_NOT_STICKY
         }
-        if (intent?.action != ACTION_START || job?.isActive == true || stopping) {
+        if (job?.isActive == true) return START_STICKY
+        if (stopping) return START_NOT_STICKY
+
+        // Android may recreate a previously user-started foreground service with
+        // a null intent. Only resume if the durable, recent, explicitly active
+        // recording matches an open SQLite session. Never start after reboot.
+        val stickyRestart = intent == null
+        val previous = if (stickyRestart) journal.lease() else null
+        val resumable = if (stickyRestart) runCatching {
+            SessionResumePolicy.shouldResume(previous, System.currentTimeMillis(),
+                previous?.sessionId?.let(db::isStillRecording) == true)
+        }.getOrDefault(false) else false
+        if (stickyRestart && !resumable) {
+            journal.markOrphaned("No current user-started session to resume")
+            stopSelf()
             return START_NOT_STICKY
         }
-
-        val sampleMs = intent.getLongExtra(EXTRA_SAMPLE_MS, 2000L)
+        if (!stickyRestart && intent?.action != ACTION_START) return START_NOT_STICKY
+        val resuming = stickyRestart && resumable
+        val sampleMs = if (resuming) previous!!.sampleMs else intent!!.getLongExtra(EXTRA_SAMPLE_MS, 2000L)
             .takeIf { it in listOf(1000L, 2000L, 5000L) } ?: 2000L
-        val historyMs = intent.getLongExtra(EXTRA_HISTORY_MS, RecordingIntervals.defaultMs)
+        val historyMs = if (resuming) previous!!.historyMs else intent!!.getLongExtra(EXTRA_HISTORY_MS, RecordingIntervals.defaultMs)
             .takeIf(RecordingIntervals::valid) ?: RecordingIntervals.defaultMs
-        val manual = (intent.getStringExtra(EXTRA_LABEL) ?: "").trim().take(64)
-        val startedAt = System.currentTimeMillis()
+        val manual = if (resuming) previous!!.manualLabel
+            else (intent!!.getStringExtra(EXTRA_LABEL) ?: "").trim().take(64)
+        val startedAt = if (resuming) previous!!.startedAt else System.currentTimeMillis()
+        journal.event(if (resuming) "STICKY_RESTART" else "START_REQUESTED",
+            if (resuming) "Resuming " + previous!!.sessionId else "New user-started recording")
 
         // A visible Stop notification is required for this opt-in beta.
         // Do not start silently if the user has denied notifications.
@@ -140,6 +163,7 @@ class GameplayMonitorService : Service() {
             GameplayRuntime.update(GameplayStatus(
                 message = "Gameplay recording not started: allow notifications to show the Stop action"
             ))
+            journal.event("START_REJECTED", "Notification permission unavailable")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -153,11 +177,15 @@ class GameplayMonitorService : Service() {
             }
         } catch (e: RuntimeException) {
             GameplayRuntime.update(GameplayStatus(message = "Cannot start monitoring: " + e.message))
+            journal.event("FOREGROUND_START_FAILED", e.javaClass.simpleName + ": " + e.message)
             stopSelf()
             return START_NOT_STICKY
         }
 
-        GameplayRuntime.update(GameplayStatus(starting = true, startedAt = startedAt))
+        GameplayRuntime.update(GameplayStatus(
+            starting = true, startedAt = startedAt,
+            message = if (resuming) "Recovering previous recording after service restart" else null
+        ))
         QuickTileUpdates.refresh(applicationContext)
         job = scope.launch {
             var sessionId: Long? = null
@@ -165,6 +193,7 @@ class GameplayMonitorService : Service() {
             var error: String? = null
             val history = SessionHistory(historyMs)
             var persistedCount = 0L
+            var lastJournalAt = 0L
             var lastKnownEden = false
             var missingAttributionAfterEden = 0
             var transitionRecoveryAttempted = false
@@ -182,8 +211,21 @@ class GameplayMonitorService : Service() {
 
             try {
                 withContext(Dispatchers.IO) {
-                    db.recoverInterrupted(startedAt)
-                    sessionId = db.start(startedAt, manual, historyMs)
+                    if (resuming) {
+                        val old = previous!!.sessionId
+                        check(db.isStillRecording(old)) { "Session no longer recoverable" }
+                        sessionId = old
+                        journal.event("SESSION_RESUMED", "recording=$old")
+                        journal.heartbeat(old, System.currentTimeMillis())
+                    } else {
+                        db.recoverInterrupted(startedAt)
+                        sessionId = db.start(startedAt, manual, historyMs)
+                        journal.begin(SessionLease(
+                            sessionId!!, startedAt, System.currentTimeMillis(),
+                            sampleMs, historyMs, manual, false,
+                            android.os.Process.myPid(), "SERVICE_STARTED"
+                        ))
+                    }
                 }
                 GameplayRuntime.update(GameplayRuntime.state.value.copy(
                     running = true, starting = false, sessionId = sessionId,
@@ -224,6 +266,10 @@ class GameplayMonitorService : Service() {
                         hudSettings.mode == HudDisplayMode.FLOATING_WITH_NOTIFICATION
                     history.offer(sample, app)
                     flush()
+                    if (sample.timestamp - lastJournalAt >= 10_000L) {
+                        lastJournalAt = sample.timestamp
+                        journal.heartbeat(sessionId!!, sample.timestamp)
+                    }
                     withContext(Dispatchers.Main.immediate) {
                         if (recoverAtTransition) {
                             // One attempt per session. This is not intended to override
@@ -264,8 +310,11 @@ class GameplayMonitorService : Service() {
                 completed = true
             } catch (_: CancellationException) {
                 completed = stopping
+                if (!stopping) journal.event("UNEXPECTED_CANCELLATION")
             } catch (e: Exception) {
                 error = "Recording failed: " + (e.message ?: "unknown error")
+                journal.event("RECORDING_EXCEPTION",
+                    e.javaClass.simpleName + ": " + (e.message ?: "unknown"))
             } finally {
                 withContext(NonCancellable + Dispatchers.IO) {
                     try {
@@ -274,8 +323,13 @@ class GameplayMonitorService : Service() {
                             flush()
                             db.finish(
                                 sessionId!!, System.currentTimeMillis(),
-                                if (completed || stopping) "COMPLETED" else "FAILED"
+                                if (completed || stopping) "COMPLETED"
+                                else if (error != null) "FAILED" else "INTERRUPTED"
                             )
+                            journal.finish(sessionId!!,
+                                if (completed || stopping) "COMPLETED"
+                                else if (error != null) "FAILED" else "INTERRUPTED",
+                                error ?: if (stopping) "User requested Stop" else "Recording ended")
                         }
                     } catch (e: Exception) {
                         error = "Unable to save completed session: " + (e.message ?: "storage error")
@@ -294,7 +348,14 @@ class GameplayMonitorService : Service() {
                 }
             }
         }
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // AYN/Eden launching a game may remove the O2P task; this must never
+        // be interpreted as a user request to stop a foreground recording.
+        journal.event("APP_TASK_REMOVED", "Recording continues if service remains alive")
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun notification(title: String, description: String): Notification {
@@ -354,10 +415,15 @@ class GameplayMonitorService : Service() {
     }
 
     override fun onDestroy() {
+        journal.event("SERVICE_DESTROYED",
+            if (stopping) "Stop requested" else "Service destroyed while active=" +
+                (job?.isActive == true))
         hudOverlay.hide()
         job?.cancel()
         scope.cancel()
-        db.close()
+        val running = job
+        if (running != null) running.invokeOnCompletion { db.close() }
+        else db.close()
         super.onDestroy()
     }
 

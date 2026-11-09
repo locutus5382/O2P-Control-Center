@@ -275,6 +275,13 @@ private fun SessionQuickPanel(appearance: AppearanceSettings, dismiss: () -> Uni
                     Uri.parse("package:" + context.packageName)))
             }
         }
+        val journal = remember { SessionReliabilityJournal(context.applicationContext) }
+        Text("Session lifecycle: " + journal.status(),
+            color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+        journal.events().takeLast(4).reversed().forEach { item ->
+            Text(item, style = MaterialTheme.typography.labelSmall,
+                color = appearance.colors.muted)
+        }
         Text("HUD: " + (status.hudDiagnostic ?: "No running HUD diagnostic"),
             color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
         Text("Foreground: " + status.foregroundLabel, style = MaterialTheme.typography.bodySmall)
