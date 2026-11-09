@@ -1,6 +1,7 @@
 package com.odin2portal.control.discovery
 
 import android.os.Build
+import android.content.Context
 import com.odin2portal.control.domain.CpuPolicy
 import com.odin2portal.control.domain.DeviceSnapshot
 import com.odin2portal.control.domain.ThermalZone
@@ -8,26 +9,16 @@ import com.odin2portal.control.hardware.AccessMode
 import com.odin2portal.control.hardware.HardwareReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /** Read-only discovery; never assumes policy0/3/7 exist or thermal_zone0 is the SoC. */
-class DeviceDiscovery(private val reader: HardwareReader = HardwareReader()) {
+class DeviceDiscovery(
+    private val reader: HardwareReader = HardwareReader(),
+    private val context: Context? = null
+) {
     companion object {
         private const val CPU_ROOT = "/sys/devices/system/cpu/cpufreq"
         private const val GPU_ROOT = "/sys/class/kgsl/kgsl-3d0"
         private const val THERMAL_ROOT = "/sys/class/thermal"
-    }
-
-    private fun directoryIndices(root: String, prefix: String, maxFallback: Int): List<Int> {
-        val indexed = File(root).listFiles()
-            ?.mapNotNull { item ->
-                if (item.name.startsWith(prefix)) item.name.removePrefix(prefix).toIntOrNull()
-                else null
-            }
-            ?.filter { it in 0..127 }
-            ?.distinct()?.sorted()
-            .orEmpty()
-        return if (indexed.isNotEmpty()) indexed else (0..maxFallback).toList()
     }
 
     suspend fun capture(mode: AccessMode): DeviceSnapshot = withContext(Dispatchers.IO) {
@@ -37,7 +28,7 @@ class DeviceDiscovery(private val reader: HardwareReader = HardwareReader()) {
         val readMode = if (mode == AccessMode.PSERVER && !privilege.available)
             AccessMode.DIRECT_ONLY else mode
         val cpuPolicies = mutableListOf<CpuPolicy>()
-        for (id in directoryIndices(CPU_ROOT, "policy", 11)) {
+        for (id in SysfsInventory.indices(CPU_ROOT, "policy", 11)) {
             val base = "$CPU_ROOT/policy$id"
             val current = reader.read("$base/scaling_cur_freq", readMode)
             val related = reader.read("$base/related_cpus", readMode)
@@ -60,17 +51,31 @@ class DeviceDiscovery(private val reader: HardwareReader = HardwareReader()) {
         )
         val gpu = gpuNames.map { reader.read("$GPU_ROOT/$it", readMode) }
         val zones = mutableListOf<ThermalZone>()
-        for (id in directoryIndices(THERMAL_ROOT, "thermal_zone", 23)) {
+        for (id in SysfsInventory.indices(THERMAL_ROOT, "thermal_zone", 127)) {
             val type = reader.read("$THERMAL_ROOT/thermal_zone$id/type", readMode)
             val temp = reader.read("$THERMAL_ROOT/thermal_zone$id/temp", readMode)
             if (type.isValid || temp.isValid) zones += ThermalZone(id, type, temp)
         }
+        // On-demand only. No hwmon/PWM writes; a tachometer is not equivalent
+        // to a fan control, and PWM cannot be interpreted as RPM.
+        val fanNodes = mutableListOf<com.odin2portal.control.hardware.HardwareRead>()
+        for (id in SysfsInventory.indices("/sys/class/hwmon", "hwmon", 31)) {
+            val base = "/sys/class/hwmon/hwmon$id"
+            val name = reader.read("$base/name", readMode)
+            val samples = listOf("fan1_input", "fan2_input", "pwm1", "pwm1_enable",
+                "fan1_label", "fan2_label").map { reader.read("$base/$it", readMode) }
+            if (name.isValid || samples.any { it.isValid }) {
+                fanNodes += name
+                fanNodes += samples
+            }
+        }
+        val androidThermal = AndroidThermalProbe.capture(context)
         val memory = reader.read("/proc/meminfo", readMode)
         val pressure = reader.read("/proc/pressure/memory", readMode)
         val notes = buildList {
             add("READ-ONLY ALPHA: no CPU, GPU, VM, fan or boot settings are modified.")
             add("PServerBinder presence alone is not a verified command or safe tuning capability.")
-            if (mode == AccessMode.PSERVER && !privilege.available) add("Legacy PServer protocol unverified; following sensor reads use Direct only.")
+            if (mode == AccessMode.PSERVER && !privilege.available) add("PServer host not authenticated by this passive probe; following sensor reads use Direct only.")
             add("Some sensors may be inaccessible under Android SELinux, even with a visible path.")
             add("GPU frequency formats/units depend on firmware; raw values are displayed.")
             add("Temperature zones are listed by sensor type; no zone is presumed to be the SoC.")
@@ -92,7 +97,9 @@ class DeviceDiscovery(private val reader: HardwareReader = HardwareReader()) {
             thermals = zones,
             memory = memory,
             pressure = pressure,
-            diagnostics = notes
+            diagnostics = notes,
+            fanNodes = fanNodes,
+            androidThermal = androidThermal
         )
     }
 }
