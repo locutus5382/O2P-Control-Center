@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
+import com.odin2portal.control.quick.QuickTileUpdates
 import com.odin2portal.control.ui.MainActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -157,12 +158,16 @@ class GameplayMonitorService : Service() {
         }
 
         GameplayRuntime.update(GameplayStatus(starting = true, startedAt = startedAt))
+        QuickTileUpdates.refresh(applicationContext)
         job = scope.launch {
             var sessionId: Long? = null
             var completed = false
             var error: String? = null
             val history = SessionHistory(historyMs)
             var persistedCount = 0L
+            var lastKnownEden = false
+            var missingAttributionAfterEden = 0
+            var transitionRecoveryAttempted = false
 
             suspend fun flush() {
                 val totalCompleted = history.rowCount.toLong() + history.droppedRows
@@ -183,14 +188,37 @@ class GameplayMonitorService : Service() {
                     message = if (detector.hasUsageAccess()) null
                               else "Usage Access not granted: app attribution will be unverified"
                 ))
+                QuickTileUpdates.refresh(applicationContext)
                 while (isActive && !stopping) {
                     val sample = collector.sample()
                     val app = withContext(Dispatchers.IO) {
                         detector.current(sample.timestamp, manual)
                     }
+                    // Eden may pause/replace its launcher Activity while a game boots.
+                    // This *may* drop attribution and alter WindowManager stacking.
+                    // Offer one bounded, user-configurable refresh, never a retry loop.
+                    if (app.packageName == "dev.eden.eden_emulator.nightly") {
+                        lastKnownEden = true
+                        missingAttributionAfterEden = 0
+                    } else if (lastKnownEden && app.packageName == null) {
+                        missingAttributionAfterEden++
+                    } else if (app.packageName != null) {
+                        lastKnownEden = false
+                        missingAttributionAfterEden = 0
+                    }
+                    val recoverAtTransition = !transitionRecoveryAttempted &&
+                        lastKnownEden && missingAttributionAfterEden >= 2 &&
+                        hudSettings.autoRecoverGameLaunch && hudSettings.floatingVisible &&
+                        hudSettings.mode == HudDisplayMode.FLOATING_WITH_NOTIFICATION
                     history.offer(sample, app)
                     flush()
                     withContext(Dispatchers.Main.immediate) {
+                        if (recoverAtTransition) {
+                            // One attempt per session. This is not intended to override
+                            // Android's protected-window overlay suppression policy.
+                            transitionRecoveryAttempted = true
+                            hudOverlay.hide()
+                        }
                         hudOverlay.render(sample)
                     }
                     val current = GameplayRuntime.state.value
@@ -202,7 +230,10 @@ class GameplayMonitorService : Service() {
                         intervalsSaved = persistedCount.toInt(),
                         latestSample = sample,
                         hudDiagnostic = hudOverlay.diagnosticStatus(),
-                        message = hudOverlay.lastError ?: current.message
+                        message = hudOverlay.lastError ?:
+                            if (recoverAtTransition)
+                                "One HUD refresh requested after Eden transition; visibility unverified"
+                            else current.message
                     ))
                     val elapsed = SystemClock.elapsedRealtime()
                     if (elapsed - lastNotificationAt > 12_000L) {
@@ -245,6 +276,7 @@ class GameplayMonitorService : Service() {
                         ))
                         withContext(Dispatchers.Main.immediate) { hudOverlay.hide() }
                         stopForeground(STOP_FOREGROUND_REMOVE)
+                        QuickTileUpdates.refresh(applicationContext)
                         stopSelf()
                     }
                 }
