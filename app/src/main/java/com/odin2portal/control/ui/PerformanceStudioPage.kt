@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +34,7 @@ fun PerformanceStudioPage(
         state.result?.let { StudioDiscovery.fromSnapshot(it, Build.FINGERPRINT) }
     }
     var chosen by remember { mutableStateOf("preset:STOCK") }
+    var proMode by rememberSaveable { mutableStateOf(false) }
     var draft by remember { mutableStateOf(emptyMap<String, Long>()) }
     var saved by remember { mutableStateOf(emptyList<SavedStudioProfile>()) }
     var customName by remember { mutableStateOf("My underclock") }
@@ -69,11 +71,22 @@ fun PerformanceStudioPage(
     O2PColumns(left = {
         O2PPanel(appearance) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("PERFORMANCE STUDIO", style = MaterialTheme.typography.titleMedium,
+                Text("UNDERCLOCK", style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f))
                 Text("READ ONLY", color = appearance.colors.muted,
                     style = MaterialTheme.typography.labelSmall)
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                O2PAction("Easy", appearance, Modifier.weight(1f), primary = !proMode) {
+                    proMode = false
+                }
+                O2PAction("Pro", appearance, Modifier.weight(1f), primary = proMode) {
+                    proMode = true
+                }
+            }
+            Text(if (proMode) "Exact discovered frequency steps · preview only" else
+                "Choose a profile. Inspect its limits before hardware controls become available.",
+                color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
             QuickTileInstallActions(appearance, session = false)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -111,8 +124,6 @@ fun PerformanceStudioPage(
             Text("PServer: " + (state.result?.privilege?.reason ?: "not probed"),
                 style = MaterialTheme.typography.bodySmall, color = appearance.colors.muted)
         }
-
-        StockVerificationPanel(appearance, state)
 
         O2PPanel(appearance) {
             Text("BUILT-IN PROFILES", style = MaterialTheme.typography.titleMedium)
@@ -157,6 +168,29 @@ fun PerformanceStudioPage(
             }
         }
     }, right = {
+        if (!proMode) {
+            O2PPanel(appearance) {
+                Text("SELECTED PROFILE · PREVIEW", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    when {
+                        editingStock -> "Stock reference · not OEM verified"
+                        selectedPreset != null -> selectedPreset.description
+                        custom != null -> custom.name
+                        else -> "No selected profile"
+                    },
+                    color = appearance.colors.muted
+                )
+                catalog?.domains?.forEach { domain ->
+                    StatusLine(domain.label,
+                        domain.mhz(draft[domain.id] ?: domain.observedCeiling), appearance)
+                } ?: Text("Frequency table not available on this capture.",
+                    color = appearance.colors.muted)
+                Text("Preview is not applied to the hardware. OEM Stock and safe rollback must be verified first.",
+                    color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+                O2PAction("Apply to hardware · locked", appearance, Modifier.fillMaxWidth(),
+                    primary = true, enabled = false) {}
+            }
+        } else {
         O2PPanel(appearance) {
             Text("FREQUENCY LIMIT PREVIEW", style = MaterialTheme.typography.titleMedium)
             Text(
@@ -276,6 +310,7 @@ fun PerformanceStudioPage(
             feedback?.let {
                 Text(it, color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
             }
+        }
         }
     })
 }
