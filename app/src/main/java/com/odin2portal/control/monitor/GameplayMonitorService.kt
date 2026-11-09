@@ -421,7 +421,9 @@ class GameplayMonitorService : Service() {
         hudOverlay.hide()
         job?.cancel()
         scope.cancel()
-        db.close()
+        val running = job
+        if (running != null) running.invokeOnCompletion { db.close() }
+        else db.close()
         super.onDestroy()
     }
 
