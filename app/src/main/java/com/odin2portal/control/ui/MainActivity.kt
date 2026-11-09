@@ -297,6 +297,7 @@ private fun DiagnosticsGate(
     }
     if (enabled) {
         DiagnosticsPage(state, appearance, refresh, export)
+        StockVerificationPanel(appearance, state)
     }
 }
 
@@ -433,7 +434,7 @@ private fun DiagnosticsPage(
         O2PPanel(appearance) {
             Text("READ-ONLY DEVICE DISCOVERY", style = MaterialTheme.typography.titleMedium)
             Text("Direct is a passive scan. PServer button checks Binder presence only. " +
-                "For the explicit authenticated, fixed-node host test, use Studio. " +
+                "Use the read-only host verification button below for fixed-node checks. " +
                 "No root/su mode or frequency writes.",
                 color = appearance.colors.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
