@@ -170,11 +170,21 @@ class PServerReadOnlyHostClient(private val context: Context) {
             deathRecipient = death
             val verifiedUid = authenticate(host, nonce, generation)
             check(!hostDied.get()) { "Privileged host died during authentication" }
-            val values = readFixedValues(host, nonce, generation)
-            check(!hostDied.get()) { "Privileged host died during read-only capability request" }
+            val readAttempt = runCatching { readFixedValues(host, nonce, generation) }
+            if (hostDied.get()) {
+                return ReadOnlyHostResult(true, verifiedUid, emptyList(),
+                    "Host UID verified, but host died during read-only capability request. " +
+                        "No hardware node was marked observed.")
+            }
+            val values = readAttempt.getOrElse { failure ->
+                return ReadOnlyHostResult(true, verifiedUid, emptyList(),
+                    "Host UID authenticated; fixed-node READ failed: " +
+                        failure.javaClass.simpleName + ": " +
+                        (failure.message ?: "unknown error").take(170))
+            }
             return ReadOnlyHostResult(true, verifiedUid, values,
-                "Authenticated single-use PServer read-only host. UID callback verified. " +
-                    "Hardware writes remain unavailable.")
+                "Authenticated read-only host. Per-node status is authoritative; " +
+                    "successful host authentication does NOT imply all nodes are readable.")
         } finally {
             host?.let { ref ->
                 runCatching { stop(ref, nonce, generation) }
@@ -244,6 +254,10 @@ class PServerReadOnlyHostClient(private val context: Context) {
                 "Read-only host refused fixed capabilities"
             }
             val count = response.readInt()
+            if (count == -1) {
+                val hostError = response.readString()?.take(120) ?: "unknown host exception"
+                error("Privileged read-only host rejected request: " + hostError)
+            }
             check(count in 1..24) { "Unexpected host node count=$count" }
             val seen = mutableSetOf<String>()
             return buildList {
