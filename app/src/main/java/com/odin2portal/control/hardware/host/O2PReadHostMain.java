@@ -26,10 +26,10 @@ import java.io.FileReader;
  */
 public final class O2PReadHostMain {
     public static final String ACTION = "com.odin2portal.control.READ_HOST_HANDOFF";
-    public static final String DESCRIPTOR = "com.odin2portal.control.IReadHostV1";
+    public static final String DESCRIPTOR = "com.odin2portal.control.IReadHostV2";
     public static final String CALLBACK = "com.odin2portal.control.IReadHostProofV1";
     public static final int MAGIC = 0x4f325031;
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
     public static final int PING = 1;
     public static final int READ = 2;
     public static final int STOP = 3;
