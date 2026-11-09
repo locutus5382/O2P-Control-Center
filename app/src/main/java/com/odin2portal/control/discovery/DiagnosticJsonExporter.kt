@@ -1,6 +1,9 @@
 package com.odin2portal.control.discovery
 
+import android.content.Context
 import android.os.Build
+import com.odin2portal.control.monitor.GameplayRuntime
+import com.odin2portal.control.monitor.SessionReliabilityJournal
 import com.odin2portal.control.domain.DeviceSnapshot
 import com.odin2portal.control.domain.SensorSelection
 import com.odin2portal.control.hardware.HardwareRead
@@ -14,7 +17,7 @@ object DiagnosticJsonExporter {
     const val SCHEMA_VERSION = 2
     data class Gate(val name: String, val state: String, val detail: String)
 
-    fun gates(snapshot: DeviceSnapshot): List<Gate> {
+    fun gates(snapshot: DeviceSnapshot, context: Context? = null): List<Gate> {
         val host = PServerValidationCache.last
         val cpuSensors = snapshot.thermals.count {
             it.type.value?.let(SensorSelection::isCpu) == true && it.temperature.isValid
@@ -33,7 +36,7 @@ object DiagnosticJsonExporter {
                     }
                 }
             }
-        return listOf(
+        val base = listOf(
             Gate("CPU frequency tables", if (cpuComplete) "OBSERVED" else "PARTIAL",
                 snapshot.cpus.size.toString() + " policies; " +
                     snapshot.cpus.count { it.availableKHz.isValid } + " readable OPP tables"),
@@ -64,9 +67,15 @@ object DiagnosticJsonExporter {
                 "Repeated physical-device tests in known AYN modes required"),
             Gate("CPU/GPU write backend", "DISABLED", "No frequency writes exist")
         )
+        if (context == null) return base
+        val running = GameplayRuntime.state.value.running
+        val journal = SessionReliabilityJournal(context)
+        return base + Gate("Session / HUD process state",
+            if (running) "RECORDING" else if (journal.lease() != null) "RESTART_PENDING"
+            else "STOPPED", journal.status())
     }
 
-    fun export(snapshot: DeviceSnapshot): String {
+    fun export(snapshot: DeviceSnapshot, context: Context? = null): String {
         val root = JSONObject()
             .put("schema", "o2p.hardware.capabilities")
             .put("schemaVersion", SCHEMA_VERSION)
@@ -134,11 +143,25 @@ object DiagnosticJsonExporter {
                     }
                 }))
         root.put("validationGates", JSONArray().also { a ->
-            gates(snapshot).forEach { gate ->
+            gates(snapshot, context).forEach { gate ->
                 a.put(JSONObject().put("name", gate.name)
                     .put("state", gate.state).put("detail", gate.detail))
             }
         })
+        if (context != null) {
+            val journal = SessionReliabilityJournal(context)
+            val session = GameplayRuntime.state.value
+            root.put("sessionDiagnostics", JSONObject()
+                .put("runningInCurrentProcess", session.running)
+                .put("startingInCurrentProcess", session.starting)
+                .put("persistedLeasePresent", journal.lease() != null)
+                .put("lifecycleStatus", privacySafe(journal.status()))
+                .put("hudWindowStatus", session.hudDiagnostic?.let(::privacySafe)
+                    ?: "No HUD diagnostic")
+                .put("events", JSONArray().also { a ->
+                    journal.events().forEach { a.put(privacySafe(it)) }
+                }))
+        }
         root.put("privacyNote", "Explicit export only. No device serial, Android ID, accounts, " +
             "app/process inventory, host nonce, private-cache path or arbitrary shell output.")
         root.put("safetyNote",
