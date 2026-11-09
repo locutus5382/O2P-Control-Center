@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.nativeKeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
