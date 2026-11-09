@@ -29,6 +29,7 @@ enum class Metric(val label: String, val source: String) {
     BATTERY_TEMP("Battery temperature", "Android battery broadcast"),
     BATTERY_LEVEL("Battery level", "Android battery broadcast"),
     CPU_LOAD("CPU load", "/proc/stat, sampled delta"),
+    CPU_PEAK_CORE("Busiest CPU core", "/proc/stat per-core delta; highest sampled utilization"),
     CPU_CLOCKS("CPU clocks", "cpufreq policies"),
     GPU_CLOCK("GPU clock", "KGSL devfreq"),
     GPU_LOAD("GPU load", "KGSL utilization"),
@@ -61,6 +62,7 @@ object CpuStats {
 
 class DirectMonitor(private val app: Application) {
     private var before: CpuStats.Times? = null
+    private val priorCores = mutableMapOf<String, CpuStats.Times>()
     private fun read(path: String): String? = try {
         File(path).takeIf { it.isFile && it.canRead() }?.bufferedReader()?.use { it.readText().trim().take(8192) }
     } catch (_: Exception) { null }
@@ -129,9 +131,24 @@ class DirectMonitor(private val app: Application) {
         val batteryLevel = if (scale > 0 && level in 0..scale)
             Reading("${(level * 100.0 / scale).roundToInt()}%", "Android battery broadcast")
         else Reading(null, "Battery level unavailable")
-        val now = CpuStats.parse(read("/proc/stat")?.lineSequence()?.firstOrNull())
+        val procStat = read("/proc/stat")
+        val now = CpuStats.parse(procStat?.lineSequence()?.firstOrNull())
         val cpu = CpuStats.busy(before, now)
         before = now
+        // Aggregate CPU load can conceal a saturated emulation thread.
+        // Measure all eight reported per-core counters from the same /proc/stat
+        // read; do not add extra polling syscalls or assume a single process.
+        val coreLoads = procStat?.lineSequence()?.mapNotNull { raw ->
+            val fields = raw.trim().split(Regex("\\s+"))
+            val name = fields.firstOrNull() ?: return@mapNotNull null
+            if (!name.matches(Regex("cpu\\d+"))) return@mapNotNull null
+            val parsed = CpuStats.parse("cpu " + fields.drop(1).joinToString(" "))
+                ?: return@mapNotNull null
+            val load = CpuStats.busy(priorCores[name], parsed)
+            priorCores[name] = parsed
+            if (load == null) null else name to load
+        }?.toList().orEmpty()
+        val busiest = coreLoads.maxByOrNull { it.second }
         val mem = read("/proc/meminfo")
         val total = Parsing.memoryKb(mem, "MemTotal")
         val available = Parsing.memoryKb(mem, "MemAvailable")
@@ -148,6 +165,9 @@ class DirectMonitor(private val app: Application) {
             Metric.BATTERY_TEMP to batteryTemp,
             Metric.BATTERY_LEVEL to batteryLevel,
             Metric.CPU_LOAD to Reading(cpu?.toString()?.plus("%"), "First sample establishes a baseline"),
+            Metric.CPU_PEAK_CORE to Reading(busiest?.second?.toString()?.plus("%"),
+                busiest?.first?.let { "$it busiest of " + coreLoads.size + " cores" }
+                    ?: "Core counters need two samples"),
             Metric.CPU_CLOCKS to cpuClocks(),
             Metric.GPU_CLOCK to gpuClock(),
             Metric.GPU_LOAD to gpuLoad(),
