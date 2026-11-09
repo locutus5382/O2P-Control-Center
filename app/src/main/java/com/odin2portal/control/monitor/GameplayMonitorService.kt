@@ -80,19 +80,32 @@ class GameplayMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_TOGGLE_HUD || intent?.action == ACTION_REFRESH_HUD) {
+        if (intent?.action == ACTION_TOGGLE_HUD ||
+            intent?.action == ACTION_REFRESH_HUD ||
+            intent?.action == ACTION_REATTACH_HUD) {
             if (job?.isActive == true) {
                 if (intent.action == ACTION_TOGGLE_HUD) {
                     hudSettings.changeFloatingVisible(!hudSettings.floatingVisible)
                 } else {
                     hudSettings.refresh()
+                    if (intent.action == ACTION_REATTACH_HUD) {
+                        // User-initiated recovery for window-manager changes at game launch.
+                        // Never loop/retry against an app that explicitly hides overlays.
+                        hudOverlay.hide()
+                    }
                 }
                 hudOverlay.render(GameplayRuntime.state.value.latestSample)
+                val diagnostic = hudOverlay.diagnosticStatus()
                 GameplayRuntime.update(GameplayRuntime.state.value.copy(
-                    hudDiagnostic = hudOverlay.diagnosticStatus()
+                    hudDiagnostic = diagnostic,
+                    message = if (intent.action == ACTION_REATTACH_HUD)
+                        "HUD window refreshed; actual visibility in Eden cannot be verified"
+                    else GameplayRuntime.state.value.message
                 ))
                 updateNotification("O2P gameplay recording",
-                    if (hudSettings.floatingVisible) "HUD requested" else "HUD hidden")
+                    if (intent.action == ACTION_REATTACH_HUD)
+                        "HUD refresh requested · visibility unknown"
+                    else if (hudSettings.floatingVisible) "HUD requested" else "HUD hidden")
             } else {
                 stopSelf()
             }
@@ -252,6 +265,11 @@ class GameplayMonitorService : Service() {
             Intent(this, GameplayMonitorService::class.java).setAction(ACTION_TOGGLE_HUD),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val refreshHud = PendingIntent.getService(
+            this, 4,
+            Intent(this, GameplayMonitorService::class.java).setAction(ACTION_REATTACH_HUD),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val stop = PendingIntent.getService(
             this, 2,
             Intent(this, GameplayMonitorService::class.java).setAction(ACTION_STOP),
@@ -269,6 +287,11 @@ class GameplayMonitorService : Service() {
             builder.addAction(Notification.Action.Builder(
                 android.R.drawable.ic_menu_view,
                 if (hudSettings.floatingVisible) "Hide HUD" else "Show HUD", toggle
+            ).build())
+            // The user's game can alter window stacking when starting a renderer.
+            // One explicit refresh is safer than a continuous reattach loop.
+            builder.addAction(Notification.Action.Builder(
+                android.R.drawable.ic_popup_sync, "Refresh HUD", refreshHud
             ).build())
         }
         return builder.addAction(Notification.Action.Builder(
@@ -298,6 +321,7 @@ class GameplayMonitorService : Service() {
         const val ACTION_START = "com.odin2portal.control.gameplay.START"
         const val ACTION_STOP = "com.odin2portal.control.gameplay.STOP"
         const val ACTION_REFRESH_HUD = "com.odin2portal.control.gameplay.REFRESH_HUD"
+        const val ACTION_REATTACH_HUD = "com.odin2portal.control.gameplay.REATTACH_HUD"
         const val ACTION_TOGGLE_HUD = "com.odin2portal.control.gameplay.TOGGLE_HUD"
         const val EXTRA_SAMPLE_MS = "sample_interval"
         const val EXTRA_HISTORY_MS = "record_interval"
