@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -39,6 +40,14 @@ import kotlinx.coroutines.launch
  * Glass/Material share contrast-aware tokens but differ in material treatment.
  */
 enum class VisualStyle { GLASS, MATERIAL }
+
+/** Four interchangeable full-surface design families; all retain the 18 colorways. */
+enum class ThemeFamily(val label: String, val shortLabel: String, val description: String) {
+    OBSIDIAN("Obsidian Liquid Glass", "Obsidian Glass", "Midnight glass · OLED-first"),
+    AERO("Aero Frost Light Glass", "Aero Frost", "Pearl and ice-blue frosted glass"),
+    VIOLET("Violet Nebula Glass", "Violet Nebula", "Deep violet ambient glass"),
+    DECKY("Decky Tactical Cockpit", "Decky Cockpit", "Matte slate · controller-first")
+}
 data class AccentOption(val id: String, val label: String, val color: Color)
 
 val O2P_ACCENTS = listOf(
@@ -80,28 +89,45 @@ private val brightThemes = setOf(
     "yellow", "bright_yellow", "light_green", "light_purple", "light_orange"
 )
 
-fun makeO2PColors(id: String): O2PColors {
+fun makeO2PColors(id: String, family: ThemeFamily = ThemeFamily.OBSIDIAN): O2PColors {
     val swatch = O2P_ACCENTS.firstOrNull { it.id == id } ?: O2P_ACCENTS[5]
-    val light = id in brightThemes
     val accent = swatch.color
-    val canvas = lerp(
-        if (light) Color(0xFFEAF0F6) else Color(0xFF090D16),
-        accent, if (light) 0.20f else 0.17f
-    )
-    val panel = lerp(
-        if (light) Color(0xFFFFFFFF) else Color(0xFF1B2332),
-        accent, if (light) 0.16f else 0.19f
-    )
+    val light = family == ThemeFamily.AERO
+    val baseCanvas = when (family) {
+        ThemeFamily.OBSIDIAN -> Color(0xFF080C14)
+        ThemeFamily.AERO -> Color(0xFFEAF4FC)
+        ThemeFamily.VIOLET -> Color(0xFF170E29)
+        ThemeFamily.DECKY -> Color(0xFF111820)
+    }
+    val basePanel = when (family) {
+        ThemeFamily.OBSIDIAN -> Color(0xFF1B2638)
+        ThemeFamily.AERO -> Color(0xFFF8FBFF)
+        ThemeFamily.VIOLET -> Color(0xFF2A1C40)
+        ThemeFamily.DECKY -> Color(0xFF202B34)
+    }
+    val tint = when (family) {
+        ThemeFamily.AERO -> 0.14f
+        ThemeFamily.DECKY -> 0.055f
+        else -> 0.14f
+    }
+    val canvas = lerp(baseCanvas, accent, tint)
+    val panel = lerp(basePanel, accent, if (light) 0.10f else if (family == ThemeFamily.DECKY) 0.07f else 0.15f)
     return O2PColors(
         accent = accent,
         ink = if (light) Color(0xFF142133) else Color(0xFFF4F6FA),
-        muted = if (light) Color(0xFF465668) else Color(0xFFB9C5D5),
+        muted = if (light) Color(0xFF485A6D) else Color(0xFFBDC9D8),
         canvas = canvas,
-        canvasEnd = lerp(canvas, if (light) Color.White else Color(0xFF020710), 0.38f),
+        canvasEnd = when (family) {
+            ThemeFamily.AERO -> Color(0xFFF3F8FF)
+            ThemeFamily.VIOLET -> Color(0xFF0C091C)
+            ThemeFamily.DECKY -> Color(0xFF0D131A)
+            ThemeFamily.OBSIDIAN -> Color(0xFF030710)
+        },
         panel = panel,
-        panelAlt = lerp(panel, accent, if (light) 0.13f else 0.15f),
-        outline = if (light) Color(0xFF26374D).copy(alpha = 0.18f)
-                  else Color.White.copy(alpha = 0.21f),
+        panelAlt = lerp(panel, accent, if (light) 0.10f else if (family == ThemeFamily.DECKY) 0.07f else 0.15f),
+        outline = if (light) Color(0xFF26374D).copy(alpha = 0.19f)
+                  else if (family == ThemeFamily.DECKY) Color.White.copy(alpha = 0.15f)
+                  else Color.White.copy(alpha = 0.25f),
         onAccent = if (accent.luminance() >= 0.46f) Color(0xFF111827) else Color.White,
         light = light
     )
@@ -109,10 +135,16 @@ fun makeO2PColors(id: String): O2PColors {
 
 class AppearanceSettings(context: Context) {
     private val preferences = context.getSharedPreferences("o2p_appearance", Context.MODE_PRIVATE)
-    var style by mutableStateOf(
-        if (preferences.getString("style", "glass") == "material") VisualStyle.MATERIAL else VisualStyle.GLASS
+    private val defaultFamily = if (preferences.getString("style", "glass") == "material")
+        ThemeFamily.DECKY else ThemeFamily.OBSIDIAN
+    var family by mutableStateOf(
+        ThemeFamily.entries.firstOrNull {
+            it.name == preferences.getString("theme_family", defaultFamily.name)
+        } ?: defaultFamily
     )
         private set
+    val style: VisualStyle get() = if (family == ThemeFamily.DECKY)
+        VisualStyle.MATERIAL else VisualStyle.GLASS
     var glassAccentId by mutableStateOf(preferences.getString("glass_accent", "dark_blue") ?: "dark_blue")
         private set
     var materialAccentId by mutableStateOf(preferences.getString("material_accent", "light_gray") ?: "light_gray")
@@ -126,10 +158,16 @@ class AppearanceSettings(context: Context) {
         it.id == if (style == VisualStyle.GLASS) glassAccentId else materialAccentId
     } ?: O2P_ACCENTS[4]
 
-    val colors: O2PColors get() = makeO2PColors(accent.id)
+    val colors: O2PColors get() = makeO2PColors(accent.id, family)
 
+    fun selectFamily(value: ThemeFamily) {
+        family = value
+        preferences.edit().putString("theme_family", value.name).apply()
+    }
+
+    /** Compatibility with legacy two-style callers and stored preferences. */
     fun selectStyle(value: VisualStyle) {
-        style = value
+        selectFamily(if (value == VisualStyle.MATERIAL) ThemeFamily.DECKY else ThemeFamily.OBSIDIAN)
         preferences.edit().putString("style", if (value == VisualStyle.GLASS) "glass" else "material").apply()
     }
     fun selectAccent(id: String) {
@@ -294,6 +332,7 @@ fun O2PAction(
     val scope = rememberCoroutineScope()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.935f else 1f,
         animationSpec = tween(durationMillis = 140),
@@ -321,13 +360,14 @@ fun O2PAction(
             .clip(shape)
             .background(fill)
             .border(
-                0.8.dp,
-                if (glass) {
+                if (focused) 2.dp else 0.8.dp,
+                if (focused) c.accent else if (glass) {
                     if (primary) Color.White.copy(alpha = 0.40f + rimPulse * 0.42f)
                     else c.outline.copy(alpha = (c.outline.alpha + rimPulse * 0.40f).coerceAtMost(1f))
-                } else c.outline,
+                } else if (focused) c.accent else c.outline,
                 shape
             )
+            .onFocusChanged { focused = it.isFocused }
             .clickable(interactionSource = interaction, indication = null, enabled = enabled) {
                 if (glass && settings.lightSweep) {
                     scope.launch {

@@ -5,6 +5,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
+import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -48,7 +51,7 @@ class MainActivity : ComponentActivity() {
             val appearance = rememberAppearanceSettings()
             val model: DashboardViewModel = viewModel()
             val state by model.state.collectAsState()
-            val initialSection = intent?.getStringExtra("o2p_open_section") ?: "Overview"
+            val initialSection = intent?.getStringExtra("o2p_open_section") ?: "Underclock"
             O2PTheme(appearance) {
                 O2PBackdrop(appearance) {
                     ControlCenter(initialSection, state, appearance, model::refresh) { snapshot ->
@@ -65,7 +68,21 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val sections = listOf("Overview", "Monitor", "Sessions", "Studio", "Appearance", "Diagnostics")
+private val sections = listOf("Underclock", "Telemetry", "Advanced", "Diagnostics")
+
+/** Keep legacy Activity/Quick Settings intents working after the navigation migration. */
+internal fun normalizeO2PSection(value: String?): String = when (value) {
+    "Overview", "Studio", "Underclock" -> "Underclock"
+    "Monitor", "Sessions", "Telemetry" -> "Telemetry"
+    "Appearance", "Advanced" -> "Advanced"
+    "Diagnostics" -> "Diagnostics"
+    else -> "Underclock"
+}
+
+internal fun stepO2PSection(current: String, delta: Int): String {
+    val index = sections.indexOf(normalizeO2PSection(current))
+    return sections[Math.floorMod(index + delta, sections.size)]
+}
 
 @Composable
 private fun ControlCenter(
@@ -75,11 +92,24 @@ private fun ControlCenter(
     refresh: (AccessMode) -> Unit,
     export: (DeviceSnapshot) -> Unit
 ) {
-    var section by rememberSaveable { mutableStateOf(initialSection.takeIf(sections::contains) ?: "Overview") }
+    var section by rememberSaveable { mutableStateOf(normalizeO2PSection(initialSection)) }
+    BackHandler(enabled = section != "Underclock") { section = "Underclock" }
     val monitor: MonitorViewModel = viewModel()
     val live by monitor.state.collectAsState()
     val gameplay by GameplayRuntime.state.collectAsState()
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+            // Only handles controller bumpers while this Activity has keyboard focus.
+            val native = event.nativeKeyEvent
+            if (native.action != KeyEvent.ACTION_DOWN || native.repeatCount != 0) {
+                false
+            } else when (native.keyCode) {
+                KeyEvent.KEYCODE_BUTTON_L1 -> { section = stepO2PSection(section, -1); true }
+                KeyEvent.KEYCODE_BUTTON_R1 -> { section = stepO2PSection(section, 1); true }
+                else -> false
+            }
+        }
+    ) {
         val landscape = maxWidth >= 700.dp
         if (landscape) {
             Row(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -96,7 +126,7 @@ private fun ControlCenter(
                     Spacer(Modifier.weight(1f))
                     Text(if (gameplay.running) "●  SESSION ACTIVE" else "●  READ ONLY",
                         style = MaterialTheme.typography.labelSmall, color = appearance.colors.muted)
-                    Text("Odin 2 Portal  ·  v0.6", style = MaterialTheme.typography.labelSmall,
+                    Text("Odin 2 Portal  ·  v0.9 alpha", style = MaterialTheme.typography.labelSmall,
                         color = appearance.colors.muted)
                 }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -159,20 +189,115 @@ private fun ScreenContent(
     export: (DeviceSnapshot) -> Unit
 ) {
     when (section) {
-        "Overview" -> OverviewPage(state, appearance, refresh, export)
-        "Monitor" -> MonitorPanel(appearance)
-        "Sessions" -> {
-            com.odin2portal.control.ui.GameplayPanel(
-                appearance = appearance,
-                onBegin = monitor::stop,
-                sampleMs = live.intervalMs,
-                recordMs = live.recordingIntervalMs,
-                manualLabel = live.sessionLabel
-            )
+        "Underclock" -> PerformanceStudioPage(appearance, state, refresh)
+        "Telemetry" -> TelemetryDestination(appearance, live, monitor)
+        "Advanced" -> AdvancedDestination(appearance)
+        "Diagnostics" -> DiagnosticsGate(state, appearance, refresh, export)
+    }
+}
+
+/** One telemetry destination, with existing live monitor and HUD/session views. */
+@Composable
+private fun TelemetryDestination(
+    appearance: AppearanceSettings,
+    live: com.odin2portal.control.monitor.MonitorState,
+    monitor: MonitorViewModel
+) {
+    var view by rememberSaveable { mutableStateOf("Live") }
+    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        O2PAction("Live metrics", appearance, Modifier.weight(1f),
+            primary = view == "Live") { view = "Live" }
+        O2PAction("Recording / HUD / History", appearance, Modifier.weight(1f),
+            primary = view == "Sessions") { view = "Sessions" }
+    }
+    if (view == "Live") {
+        MonitorPanel(appearance)
+    } else {
+        GameplayPanel(
+            appearance = appearance,
+            onBegin = monitor::stop,
+            sampleMs = live.intervalMs,
+            recordMs = live.recordingIntervalMs,
+            manualLabel = live.sessionLabel
+        )
+    }
+}
+
+/** Device settings only link to native Android; no privileged display writes. */
+@Composable
+private fun AdvancedDestination(settings: AppearanceSettings) {
+    val context = LocalContext.current
+    AppearancePage(settings)
+    O2PColumns(left = {
+        O2PPanel(settings) {
+            Text("DEVICE", style = MaterialTheme.typography.titleMedium)
+            Text("Display Colors are owned by Android and AYN. No unverified saturation or color-temperature changes.",
+                color = settings.colors.muted)
+            O2PAction("Open system display settings", settings, Modifier.fillMaxWidth()) {
+                try {
+                    context.startActivity(Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS))
+                } catch (_: android.content.ActivityNotFoundException) {
+                    android.widget.Toast.makeText(context,
+                        "Display settings are unavailable on this firmware",
+                        android.widget.Toast.LENGTH_LONG).show()
+                } catch (_: SecurityException) {
+                    android.widget.Toast.makeText(context,
+                        "Android blocked access to display settings",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+            Text("Charging separation, fan, controller and trigger controls remain in AYN's built-in tools.",
+                color = settings.colors.muted, style = MaterialTheme.typography.bodySmall)
         }
-        "Studio" -> PerformanceStudioPage(appearance, state, refresh)
-        "Appearance" -> AppearancePage(appearance)
-        "Diagnostics" -> DiagnosticsPage(state, appearance, refresh, export)
+    }, right = {
+        O2PPanel(settings) {
+            Text("QUICK ACTIONS", style = MaterialTheme.typography.titleMedium)
+            Text("Profile tile currently selects previews only. Session tile manages recording and HUD.",
+                color = settings.colors.muted)
+            com.odin2portal.control.quick.QuickTileInstallActions(settings, session = false)
+            com.odin2portal.control.quick.QuickTileInstallActions(settings, session = true)
+            Text("Tuning and recording do not start automatically at boot.",
+                color = settings.colors.muted, style = MaterialTheme.typography.bodySmall)
+        }
+    })
+}
+
+/** Verbose diagnostics are opt-in; mandatory safety/readback gates stay active. */
+@Composable
+private fun DiagnosticsGate(
+    state: DashboardState,
+    appearance: AppearanceSettings,
+    refresh: (AccessMode) -> Unit,
+    export: (DeviceSnapshot) -> Unit
+) {
+    val context = LocalContext.current
+    val prefs = remember(context) {
+        context.getSharedPreferences("o2p_diagnostic_ui", Context.MODE_PRIVATE)
+    }
+    var enabled by remember { mutableStateOf(prefs.getBoolean("enabled", false)) }
+    O2PPanel(appearance) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("DIAGNOSTIC MODE", style = MaterialTheme.typography.titleMedium)
+                Text("Enables detailed read-only hardware inventories, host probes and exports.",
+                    color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = enabled, onCheckedChange = {
+                enabled = it
+                prefs.edit().putBoolean("enabled", it).apply()
+            })
+        }
+        Text("Safety checks, effective readbacks and session recovery are always on.",
+            color = appearance.colors.muted, style = MaterialTheme.typography.labelSmall)
+        if (!enabled) {
+            StatusLine("Hardware tuning", "Disabled — read-only alpha", appearance)
+            StatusLine("Privileged write access", "Not validated", appearance)
+            StatusLine("Current capture", if (state.result == null) "Unavailable" else "Ready", appearance)
+        }
+    }
+    if (enabled) {
+        DiagnosticsPage(state, appearance, refresh, export)
+        StockVerificationPanel(appearance, state)
     }
 }
 
@@ -309,7 +434,7 @@ private fun DiagnosticsPage(
         O2PPanel(appearance) {
             Text("READ-ONLY DEVICE DISCOVERY", style = MaterialTheme.typography.titleMedium)
             Text("Direct is a passive scan. PServer button checks Binder presence only. " +
-                "For the explicit authenticated, fixed-node host test, use Studio. " +
+                "Use the read-only host verification button below for fixed-node checks. " +
                 "No root/su mode or frequency writes.",
                 color = appearance.colors.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -468,18 +593,20 @@ private fun AppearancePage(settings: AppearanceSettings) {
     O2PColumns(left = {
         O2PPanel(settings) {
             Text("VISUAL SYSTEM", style = MaterialTheme.typography.titleMedium)
-            Text("Choose the material. Both styles recolor the entire interface.",
+            Text("Choose one of four complete visual families. All 18 colorways recolor the entire interface.",
                 color = settings.colors.muted)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                O2PAction("Liquid Glass", settings, Modifier.weight(1f),
-                    primary = settings.style == VisualStyle.GLASS) {
-                    settings.selectStyle(VisualStyle.GLASS)
-                }
-                O2PAction("Material", settings, Modifier.weight(1f),
-                    primary = settings.style == VisualStyle.MATERIAL) {
-                    settings.selectStyle(VisualStyle.MATERIAL)
+            ThemeFamily.entries.chunked(2).forEach { families ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    families.forEach { family ->
+                        O2PAction(family.shortLabel, settings, Modifier.weight(1f),
+                            primary = settings.family == family) {
+                            settings.selectFamily(family)
+                        }
+                    }
                 }
             }
+            Text(settings.family.description, color = settings.colors.muted,
+                style = MaterialTheme.typography.bodySmall)
             Text("COLORWAY  ·  " + settings.accent.label.uppercase(Locale.ROOT),
                 style = MaterialTheme.typography.labelSmall, color = settings.colors.muted)
             O2P_ACCENTS.chunked(6).forEach { row ->
@@ -520,15 +647,15 @@ private fun AppearancePage(settings: AppearanceSettings) {
     }, right = {
         O2PPanel(settings) {
             Text("LIVE PREVIEW", style = MaterialTheme.typography.titleMedium)
-            Text("Glass reacts to your touch; the whole background and surfaces shift with your colorway.",
+            Text(settings.family.label + " · Entire background, surfaces, buttons and focus borders share the selected colorway.",
                 color = settings.colors.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetricTile(settings, "CPU", "32.9°C", "Preview only", Modifier.weight(1f))
-                MetricTile(settings, "GPU", "30.6°C", "Preview only", Modifier.weight(1f))
+                MetricTile(settings, "CPU", "—", "Visual preview", Modifier.weight(1f))
+                MetricTile(settings, "GPU", "—", "Visual preview", Modifier.weight(1f))
             }
             O2PAction("Tap to see the light travel", settings,
                 Modifier.fillMaxWidth(), primary = true) {}
-            Text("Appearance preview values are illustrative—not device measurements.",
+            Text("Preview uses placeholders—not live device measurements.",
                 color = settings.colors.muted, style = MaterialTheme.typography.labelSmall)
         }
     })
