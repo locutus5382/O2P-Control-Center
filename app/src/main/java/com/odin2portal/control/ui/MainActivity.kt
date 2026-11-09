@@ -323,7 +323,7 @@ private fun DiagnosticsPage(
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
             Text("M1 READ-ONLY VALIDATION", style = MaterialTheme.typography.titleSmall)
             snapshot?.let { captured ->
-                DiagnosticJsonExporter.gates(captured).forEach { gate ->
+                DiagnosticJsonExporter.gates(captured, context).forEach { gate ->
                     StatusLine(gate.name, gate.state, appearance)
                     if (gate.state == "BLOCKED" || gate.state == "PARTIAL") {
                         Text(gate.detail, style = MaterialTheme.typography.labelSmall,
@@ -343,7 +343,7 @@ private fun DiagnosticsPage(
                 O2PAction("Copy JSON", appearance, Modifier.weight(1f),
                     enabled = snapshot != null) {
                     snapshot?.let {
-                        val json = DiagnosticJsonExporter.export(it)
+                        val json = DiagnosticJsonExporter.export(it, context)
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
                             as ClipboardManager
                         clipboard.setPrimaryClip(
