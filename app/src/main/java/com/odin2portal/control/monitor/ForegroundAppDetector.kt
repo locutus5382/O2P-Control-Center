@@ -26,6 +26,11 @@ class ForegroundAppDetector(private val context: Context) {
     private var lastQueryEnd = 0L
     private var activePackage: String? = null
     private var activeActivityClass: String? = null
+    /** Increments when a different Activity in the same Eden package is resumed.
+     *  This is evidence of an Activity transition, not proof a game started.
+     */
+    var edenActivityTransitions: Long = 0L
+        private set
 
     fun hasUsageAccess(): Boolean = try {
         appOps?.checkOpNoThrow(
@@ -77,6 +82,11 @@ class ForegroundAppDetector(private val context: Context) {
             val cls = event.className?.takeIf { it.isNotBlank() }
             when (event.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> if (pkg != null) {
+                    if (pkg == EDEN_PACKAGE && activePackage == pkg &&
+                        activeActivityClass != null && cls != null &&
+                        cls != activeActivityClass) {
+                        edenActivityTransitions++
+                    }
                     activePackage = pkg
                     activeActivityClass = cls
                 }
@@ -112,4 +122,8 @@ class ForegroundAppDetector(private val context: Context) {
             attribution = AppAttribution.USAGE_EVENTS
         )
     }
+    companion object {
+        const val EDEN_PACKAGE = "dev.eden.eden_emulator.nightly"
+    }
+
 }
