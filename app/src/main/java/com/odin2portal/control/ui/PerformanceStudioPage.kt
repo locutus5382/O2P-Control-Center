@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.odin2portal.control.hardware.AccessMode
+import com.odin2portal.control.quick.QuickTileInstallActions
 import com.odin2portal.control.studio.*
 import java.util.Locale
 
@@ -70,6 +71,7 @@ fun PerformanceStudioPage(
                 Text("READ ONLY", color = appearance.colors.muted,
                     style = MaterialTheme.typography.labelSmall)
             }
+            QuickTileInstallActions(appearance, session = false)
             Text("Underclock-only design. No frequencies are changed in this preview.",
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
