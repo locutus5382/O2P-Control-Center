@@ -1,3 +1,7 @@
+## v0.6 PServer architecture comparison (9 November 2026)
+
+The latest draft branch compares the actual underclocking and privilege implementations of **ClusterTune** (current MIT) and **PULSE** (GPLv2). O2P remains GPLv3 and does **not** allow rooting. The PServer diagnostic now probes Binder liveness **without running commands**, and an adapted MIT launch-only transport is present for a future *audited, read-only* host but **not activated**. No CPU/GPU writes have been implemented. See [the full comparison, Quick Settings tile plan and safety gates](docs/UNDERCLOCK_PSERVER_COMPARISON_2026-11-09.md).
+
 # O2P Control Center
 
 A dedicated Android performance and diagnostics project for the **AYN Odin 2 Portal Base**. The user interface offers Liquid Glass and Material-style appearance options, and the current alpha is intentionally **read-only**.
