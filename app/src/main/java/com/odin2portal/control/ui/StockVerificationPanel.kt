@@ -11,12 +11,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.odin2portal.control.hardware.AccessMode
+import com.odin2portal.control.hardware.PServerReadOnlyHostClient
+import com.odin2portal.control.hardware.ReadOnlyHostResult
+import kotlinx.coroutines.launch
 import com.odin2portal.control.studio.*
 
 /** User-directed dual-capture review. Every value is observed, never written. */
 @Composable
 fun StockVerificationPanel(appearance: AppearanceSettings, state: DashboardState) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var hostBusy by remember { mutableStateOf(false) }
+    var hostRead by remember { mutableStateOf<ReadOnlyHostResult?>(null) }
     val store = remember(context) { StockEvidenceStore(context.applicationContext) }
     val snapshot = state.result
     val catalogue = remember(snapshot?.capturedAtUtc) {
@@ -32,6 +38,56 @@ fun StockVerificationPanel(appearance: AppearanceSettings, state: DashboardState
         observations.any { it.capturedAt == cat.capturedAt &&
             it.firmwareFingerprint == cat.fingerprint && it.oemModeLabel == modeLabel.trim() }
     } == true
+
+    O2PPanel(appearance) {
+        Text("PSERVER PRIVILEGED HOST · READ ONLY",
+            style = MaterialTheme.typography.titleMedium)
+        Text("Explicitly test the ClusterTune-style handoff on this Portal. " +
+            "The temporary host can ONLY read a fixed set of CPU/GPU nodes; " +
+            "it cannot change clocks, permissions or governors. " +
+            "Firmware incompatibility is a valid test result.",
+            style = MaterialTheme.typography.bodySmall,
+            color = appearance.colors.muted)
+        O2PAction(if (hostBusy) "Checking host…" else
+            "Verify read-only PServer host", appearance, Modifier.fillMaxWidth(),
+            enabled = !hostBusy) {
+            hostBusy = true
+            scope.launch {
+                try {
+                    hostRead = PServerReadOnlyHostClient(context.applicationContext)
+                        .verifyReadOnly()
+                } finally {
+                    hostBusy = false
+                }
+            }
+        }
+        hostRead?.let { result ->
+            StatusLine("Privileged identity verified",
+                if (result.authenticated) "YES · UID " + result.verifiedHostUid
+                else "NO", appearance)
+            Text(result.diagnostic, style = MaterialTheme.typography.bodySmall,
+                color = appearance.colors.muted)
+            result.fields.filterKeys {
+                it.endsWith("scaling_min_freq") || it.endsWith("scaling_max_freq") ||
+                    it.endsWith("max_pwrlevel") || it.endsWith("min_pwrlevel") ||
+                    it.endsWith("/max_gpuclk")
+            }.forEach { (path, value) ->
+                Text(path.substringAfterLast("/cpufreq/").take(75) + " = " + value,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = appearance.colors.muted)
+            }
+            O2PAction("Share PServer host validation report", appearance,
+                Modifier.fillMaxWidth()) {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "O2P PServer read-only host report")
+                    putExtra(Intent.EXTRA_TEXT, result.export())
+                }
+                context.startActivity(Intent.createChooser(intent,
+                    "Share PServer read-only result"))
+            }
+        }
+    }
 
     O2PPanel(appearance) {
         Text("OEM STOCK EVIDENCE · READ ONLY", style = MaterialTheme.typography.titleMedium)
@@ -102,7 +158,9 @@ fun StockVerificationPanel(appearance: AppearanceSettings, state: DashboardState
         }
         message?.let { Text(it, style = MaterialTheme.typography.bodySmall,
             color = appearance.colors.muted) }
-        Text("No CPU/GPU writes, PServer host launch, root access or boot-time tuning are performed by this checker.",
+        Text("Stock snapshots remain direct read-only measurements. " +
+            "The separate PServer test only starts an ephemeral fixed-read host; " +
+            "no clock, fan, thermal or kernel-permission writes are implemented.",
             style = MaterialTheme.typography.labelSmall, color = appearance.colors.muted)
     }
 
