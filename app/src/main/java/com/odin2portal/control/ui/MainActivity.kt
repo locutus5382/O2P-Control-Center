@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.odin2portal.control.hardware.PServerReadOnlyHostClient
 import com.odin2portal.control.discovery.DiagnosticJsonExporter
 import com.odin2portal.control.domain.DeviceSnapshot
 import com.odin2portal.control.domain.Parsing
@@ -37,6 +38,7 @@ import com.odin2portal.control.hardware.AccessMode
 import com.odin2portal.control.quick.QuickTileUpdates
 import com.odin2portal.control.monitor.GameplayRuntime
 import com.odin2portal.control.monitor.MonitorViewModel
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -298,6 +300,9 @@ private fun DiagnosticsPage(
 ) {
     val snapshot = state.result
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var hostBusy by remember { mutableStateOf(false) }
+    var hostTestMessage by remember { mutableStateOf<String?>(null) }
     var diagnosticFeedback by remember { mutableStateOf<String?>(null) }
     var showRaw by remember { mutableStateOf(false) }
     O2PColumns(left = {
@@ -321,6 +326,27 @@ private fun DiagnosticsPage(
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Text(snapshot?.privilege?.reason ?: "No diagnostic capture yet",
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+            O2PAction(if (hostBusy) "PServer host verification running…"
+                else "Verify PServer host (read-only)", appearance, Modifier.fillMaxWidth(),
+                enabled = !hostBusy) {
+                hostBusy = true
+                scope.launch {
+                    try {
+                        val result = PServerReadOnlyHostClient(context.applicationContext)
+                            .verifyReadOnly()
+                        hostTestMessage = if (result.authenticated)
+                            "Host UID " + result.verifiedHostUid +
+                                " authenticated; individual node errors are shown in JSON."
+                        else "Host not authenticated: " + result.diagnostic.take(220)
+                    } finally {
+                        hostBusy = false
+                    }
+                }
+            }
+            hostTestMessage?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = appearance.colors.muted)
+            }
             Text("M1 READ-ONLY VALIDATION", style = MaterialTheme.typography.titleSmall)
             snapshot?.let { captured ->
                 DiagnosticJsonExporter.gates(captured, context).forEach { gate ->
