@@ -171,6 +171,14 @@ fun GameplayPanel(
             Text("Select live and history intervals in Monitor before starting.",
                 style = MaterialTheme.typography.bodySmall,
                 color = appearance.colors.muted)
+            val journal = remember { SessionReliabilityJournal(context.applicationContext) }
+            Text("Service lifecycle: " + journal.status(),
+                style = MaterialTheme.typography.bodySmall,
+                color = appearance.colors.muted)
+            journal.events().takeLast(5).reversed().forEach { logLine ->
+                Text(logLine, style = MaterialTheme.typography.labelSmall,
+                    color = appearance.colors.muted)
+            }
             status.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             uiMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
