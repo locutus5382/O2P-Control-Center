@@ -13,9 +13,10 @@ import kotlinx.coroutines.withContext
  *
  * Stage 1 does NOT launch that host or use PServer to read any kernel node.
  */
-class PServerReader(
-    private val transport: PServerHostTransport = PServerHostTransport()
+class PServerReader internal constructor(
+    private val transport: PServerHostTransport
 ) : ReadTransport {
+    constructor() : this(PServerHostTransport())
     override suspend fun probe(): PrivilegeStatus = withContext(Dispatchers.IO) {
         val visible = transport.serviceVisible
         PrivilegeStatus(
