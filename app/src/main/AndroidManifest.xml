@@ -24,6 +24,31 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".quick.QuickControlActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:screenOrientation="unspecified" />
+        <service
+            android:name=".quick.ProfileQuickTileService"
+            android:label="@string/quick_profile_tile"
+            android:icon="@drawable/ic_qs_profile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".quick.SessionQuickTileService"
+            android:label="@string/quick_session_tile"
+            android:icon="@drawable/ic_qs_session"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
         <service
             android:name=".monitor.GameplayMonitorService"
             android:exported="false"
