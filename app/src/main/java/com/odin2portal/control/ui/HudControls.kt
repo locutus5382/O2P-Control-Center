@@ -135,6 +135,12 @@ fun HudControls(appearance: AppearanceSettings) {
                 applyChanges()
             }
             if (session.running) {
+                O2PAction("Refresh floating window", appearance, Modifier.fillMaxWidth()) {
+                    context.startService(
+                        Intent(context, GameplayMonitorService::class.java)
+                            .setAction(GameplayMonitorService.ACTION_REATTACH_HUD)
+                    )
+                }
                 Text("HUD window state: " + (session.hudDiagnostic ?: "Waiting for a sample"),
                     style = MaterialTheme.typography.bodySmall,
                     color = appearance.colors.muted)
