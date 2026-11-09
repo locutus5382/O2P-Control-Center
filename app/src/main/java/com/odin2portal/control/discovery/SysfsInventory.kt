@@ -22,12 +22,13 @@ object SysfsInventory {
      * Called ONCE per monitor collector. Only relevant, named CPU/GPU zones
      * are read every sampling tick; names are never hardcoded to zone indexes.
      */
-    fun monitoredThermalZones(read: (String) -> String?): List<NamedThermal> =
-        indices("/sys/class/thermal", "thermal_zone", 127).mapNotNull { id ->
-            val type = read("/sys/class/thermal/thermal_zone$id/type")?.trim()
+    fun monitoredThermalZones(read: (String) -> String?,
+                              root: String = "/sys/class/thermal"): List<NamedThermal> =
+        indices(root, "thermal_zone", 127).mapNotNull { id ->
+            val type = read("$root/thermal_zone$id/type")?.trim()
                 ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             if (!SensorSelection.isCpu(type) && !SensorSelection.isGpu(type))
                 return@mapNotNull null
-            NamedThermal(id, type, "/sys/class/thermal/thermal_zone$id/temp")
+            NamedThermal(id, type, "$root/thermal_zone$id/temp")
         }
 }
