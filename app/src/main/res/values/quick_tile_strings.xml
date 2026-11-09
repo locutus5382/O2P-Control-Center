@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="quick_profile_tile">O2P Profile</string>
+    <string name="quick_session_tile">O2P Session</string>
+</resources>
