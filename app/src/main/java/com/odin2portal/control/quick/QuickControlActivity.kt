@@ -91,7 +91,7 @@ object QuickTileInstaller {
 fun QuickTileInstallActions(appearance: AppearanceSettings, session: Boolean) {
     val activity = LocalContext.current as? Activity
     var feedback by remember { mutableStateOf<String?>(null) }
-    O2PAction("Add " + if (session) "O2P Session" else "O2P Profile" + " Quick Settings tile",
+    O2PAction("Add " + (if (session) "O2P Session" else "O2P Profile") + " Quick Settings tile",
         appearance, Modifier.fillMaxWidth(), enabled = activity != null) {
         activity?.let { QuickTileInstaller.request(it, session) { message ->
             feedback = message
