@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -189,6 +192,23 @@ fun GameplayPanel(
                 if (permissionGranted) "Granted" else "Not granted", appearance)
             StatusLine("Notifications",
                 if (notificationGranted) "Allowed" else "Required", appearance)
+            val power = context.getSystemService(PowerManager::class.java)
+            val unrestricted = runCatching {
+                power?.isIgnoringBatteryOptimizations(context.packageName) == true
+            }.getOrDefault(false)
+            StatusLine("Battery optimization",
+                if (unrestricted) "Unrestricted/exempt" else "May restrict background recording",
+                appearance)
+            if (!unrestricted) {
+                Text("AYN game-launch behavior may terminate non-exempt apps. " +
+                    "Review O2P's battery/background restrictions if interruptions continue; " +
+                    "the app does not change this setting automatically.",
+                    style = MaterialTheme.typography.bodySmall, color = appearance.colors.muted)
+                O2PAction("Open O2P system app settings", appearance, Modifier.fillMaxWidth()) {
+                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + context.packageName)))
+                }
+            }
             if (!permissionGranted) {
                 Text("Grant Usage Access to identify the foreground app. Without it, labels are manual or unknown.",
                     color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
