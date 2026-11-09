@@ -168,6 +168,8 @@ class GameplayMonitorService : Service() {
             var lastKnownEden = false
             var missingAttributionAfterEden = 0
             var transitionRecoveryAttempted = false
+            var handledEdenActivityTransition = 0L
+            var pendingEdenRecoveryAt: Long? = null
 
             suspend fun flush() {
                 val totalCompleted = history.rowCount.toLong() + history.droppedRows
@@ -197,7 +199,12 @@ class GameplayMonitorService : Service() {
                     // Eden may pause/replace its launcher Activity while a game boots.
                     // This *may* drop attribution and alter WindowManager stacking.
                     // Offer one bounded, user-configurable refresh, never a retry loop.
-                    if (app.packageName == "dev.eden.eden_emulator.nightly") {
+                    val activitySequence = detector.edenActivityTransitions
+                    if (activitySequence > handledEdenActivityTransition) {
+                        handledEdenActivityTransition = activitySequence
+                        pendingEdenRecoveryAt = sample.timestamp + 2_500L
+                    }
+                    if (app.packageName == ForegroundAppDetector.EDEN_PACKAGE) {
                         lastKnownEden = true
                         missingAttributionAfterEden = 0
                     } else if (lastKnownEden && app.packageName == null) {
@@ -206,8 +213,13 @@ class GameplayMonitorService : Service() {
                         lastKnownEden = false
                         missingAttributionAfterEden = 0
                     }
+                    val recoveredAfterEvent = pendingEdenRecoveryAt?.let {
+                        sample.timestamp >= it
+                    } == true
+                    val recoveredAfterAttributionLoss =
+                        lastKnownEden && missingAttributionAfterEden >= 2
                     val recoverAtTransition = !transitionRecoveryAttempted &&
-                        lastKnownEden && missingAttributionAfterEden >= 2 &&
+                        (recoveredAfterEvent || recoveredAfterAttributionLoss) &&
                         hudSettings.autoRecoverGameLaunch && hudSettings.floatingVisible &&
                         hudSettings.mode == HudDisplayMode.FLOATING_WITH_NOTIFICATION
                     history.offer(sample, app)
@@ -232,7 +244,7 @@ class GameplayMonitorService : Service() {
                         hudDiagnostic = hudOverlay.diagnosticStatus(),
                         message = hudOverlay.lastError ?:
                             if (recoverAtTransition)
-                                "One HUD refresh requested after Eden transition; visibility unverified"
+                                "One HUD reattach after Eden activity transition; visibility unverified"
                             else current.message
                     ))
                     val elapsed = SystemClock.elapsedRealtime()
