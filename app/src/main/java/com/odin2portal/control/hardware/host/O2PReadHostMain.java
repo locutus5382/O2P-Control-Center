@@ -186,7 +186,7 @@ public final class O2PReadHostMain {
                     ? READ_DENIED
                     : err == OsConstants.ENOENT ? READ_NOT_FOUND : READ_ERROR;
                 return new NodeResult(status, null, err,
-                    "Linux errno " + err + " (" + error.functionName + ")");
+                    "Linux errno " + err);
             } catch (Exception error) {
                 return new NodeResult(READ_ERROR, null, 0,
                     "Exception: " + error.getClass().getSimpleName());
