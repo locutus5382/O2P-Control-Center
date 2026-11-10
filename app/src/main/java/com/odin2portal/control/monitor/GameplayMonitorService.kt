@@ -39,7 +39,14 @@ data class GameplayStatus(
     val intervalsSaved: Int = 0,
     val latestSample: MonitorSample? = null,
     val hudDiagnostic: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    // Cross-process readbacks: never infer that a selected profile applied.
+    val cpuDisplay: String? = null,
+    val gpuDisplay: String? = null,
+    val lifecycleStatus: String? = null,
+    val lifecycleEvents: List<String> = emptyList(),
+    val monitorProcessId: Int? = null,
+    val recoveryPending: Boolean = false
 )
 
 /** In-process status for the UI. History itself is durable in the SQLite store. */
@@ -73,7 +80,7 @@ class GameplayMonitorService : Service() {
         hudSettings = HudPreferences(applicationContext)
         hudOverlay = HudOverlay(this, hudSettings)
         journal = SessionReliabilityJournal(applicationContext)
-        journal.event("SERVICE_CREATED")
+        journal.event("SERVICE_CREATED", "pid=" + android.os.Process.myPid())
         val channel = NotificationChannel(
             CHANNEL_ID, "O2P Gameplay Monitoring", NotificationManager.IMPORTANCE_LOW
         ).apply {
@@ -84,6 +91,9 @@ class GameplayMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        journal.event("SERVICE_COMMAND",
+            "pid=" + android.os.Process.myPid() + " startId=" + startId +
+            " action=" + (intent?.action ?: "STICKY_NULL") + " flags=" + flags)
         if (intent?.action == ACTION_TOGGLE_HUD ||
             intent?.action == ACTION_REFRESH_HUD ||
             intent?.action == ACTION_REATTACH_HUD) {

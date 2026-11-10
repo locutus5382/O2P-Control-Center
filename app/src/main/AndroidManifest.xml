@@ -49,8 +49,17 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+        <!-- Run active recording separately from the UI/Quick Settings process.
+             This lets Android discard large UI allocations without necessarily
+             terminating the user-started monitoring foreground service. -->
+        <provider
+            android:name=".monitor.RecordingStatusProvider"
+            android:authorities="${applicationId}.monitor.status"
+            android:process=":monitor"
+            android:exported="false" />
         <service
             android:name=".monitor.GameplayMonitorService"
+            android:process=":monitor"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse">

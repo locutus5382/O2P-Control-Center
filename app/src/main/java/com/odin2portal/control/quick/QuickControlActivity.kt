@@ -29,6 +29,10 @@ import com.odin2portal.control.R
 import com.odin2portal.control.monitor.*
 import com.odin2portal.control.studio.*
 import com.odin2portal.control.ui.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /** Quick Settings always enters an explicit, user-operated control panel. */
@@ -42,6 +46,15 @@ class QuickControlActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val which = if (intent?.action == ACTION_SESSION) "session" else "profile"
         setContent {
+            LaunchedEffect(Unit) {
+                while (isActive) {
+                    val latest = withContext(Dispatchers.IO) {
+                        RecordingStatusBridge.read(this@QuickControlActivity)
+                    }
+                    GameplayRuntime.update(latest)
+                    delay(1_500L)
+                }
+            }
             val appearance = rememberAppearanceSettings()
             O2PTheme(appearance) {
                 O2PBackdrop(appearance) {
@@ -134,7 +147,7 @@ private fun ProfileQuickPanel(appearance: AppearanceSettings, dismiss: () -> Uni
 
     O2PPanel(appearance) {
         Text("O2P PROFILE · QUICK ACCESS", style = MaterialTheme.typography.titleLarge)
-        Text("These are READ-ONLY underclock previews. PServer and OEM Stock are not verified, so this tile CANNOT change clocks.",
+        Text("These are read-only profile previews. The privileged PServer read-only host has been tested, but no safe CPU/GPU writer or verified Stock restoration is enabled in this build. This tile does not change clocks.",
             color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (catalogue?.domains?.isNotEmpty() != true) {
@@ -276,11 +289,24 @@ private fun SessionQuickPanel(appearance: AppearanceSettings, dismiss: () -> Uni
             }
         }
         val journal = remember { SessionReliabilityJournal(context.applicationContext) }
-        Text("Session lifecycle: " + journal.status(),
+        Text("Session lifecycle: " + (status.lifecycleStatus ?: journal.status()),
             color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
-        journal.events().takeLast(4).reversed().forEach { item ->
-            Text(item, style = MaterialTheme.typography.labelSmall,
-                color = appearance.colors.muted)
+        status.monitorProcessId?.let { pid ->
+            Text("Recorder process: " + pid,
+                color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+        }
+        (status.lifecycleEvents.ifEmpty { journal.events() }).takeLast(4).reversed()
+            .forEach { item ->
+                Text(item, style = MaterialTheme.typography.labelSmall,
+                    color = appearance.colors.muted)
+            }
+        O2PAction("Share recorder lifecycle report", appearance, Modifier.fillMaxWidth()) {
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "O2P recording lifecycle report")
+                putExtra(Intent.EXTRA_TEXT, RecordingStatusBridge.diagnosticReport(context.applicationContext, status))
+            }
+            context.startActivity(Intent.createChooser(share, "Share recording report"))
         }
         Text("HUD: " + (status.hudDiagnostic ?: "No running HUD diagnostic"),
             color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
