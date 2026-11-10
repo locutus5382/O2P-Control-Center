@@ -134,5 +134,6 @@ object RecordingStatusBridge {
         appendLine("Recent lifecycle events:")
         if (status.lifecycleEvents.isEmpty()) appendLine("(none reported)")
         else status.lifecycleEvents.forEach(::appendLine)
+        append(ProcessExitDiagnostics.report(context))
     }
 }
