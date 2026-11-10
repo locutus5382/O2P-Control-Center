@@ -56,7 +56,10 @@ object ProcessExitDiagnostics {
                 " | pid=" + exit.pid +
                 " | reason=" + reasonLabel(exit.reason) +
                 " | status=" + exit.status +
-                " | importance=" + exit.importance
+                " | importance=" + exit.importance +
+                " | pssKB=" + exit.pss +
+                " | rssKB=" + exit.rss +
+                " | description=" + (exit.description ?: "none").take(160).replace("\\n", " ")
             )
         }
         appendLine(
