@@ -40,8 +40,13 @@ import com.odin2portal.control.domain.SensorSelection
 import com.odin2portal.control.hardware.AccessMode
 import com.odin2portal.control.quick.QuickTileUpdates
 import com.odin2portal.control.monitor.GameplayRuntime
+import com.odin2portal.control.monitor.RecordingStatusBridge
 import com.odin2portal.control.monitor.MonitorViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
