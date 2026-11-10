@@ -39,7 +39,14 @@ data class GameplayStatus(
     val intervalsSaved: Int = 0,
     val latestSample: MonitorSample? = null,
     val hudDiagnostic: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    // Cross-process readbacks: never infer that a selected profile applied.
+    val cpuDisplay: String? = null,
+    val gpuDisplay: String? = null,
+    val lifecycleStatus: String? = null,
+    val lifecycleEvents: List<String> = emptyList(),
+    val monitorProcessId: Int? = null,
+    val recoveryPending: Boolean = false
 )
 
 /** In-process status for the UI. History itself is durable in the SQLite store. */
