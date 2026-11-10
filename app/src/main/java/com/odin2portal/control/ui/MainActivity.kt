@@ -31,6 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import com.odin2portal.control.hardware.PServerReadOnlyHostClient
 import com.odin2portal.control.discovery.DiagnosticJsonExporter
 import com.odin2portal.control.domain.DeviceSnapshot
@@ -56,12 +59,16 @@ class MainActivity : ComponentActivity() {
             // Read status from :monitor instead of a stale local singleton.
             // Query only while this Activity's composition is alive.
             LaunchedEffect(Unit) {
-                while (isActive) {
-                    val latest = withContext(Dispatchers.IO) {
-                        RecordingStatusBridge.read(this@MainActivity)
+                // The UI activity can stay alive beneath Eden. IPC polling must
+                // stop at ON_STOP; only the user-started :monitor FGS continues.
+                this@MainActivity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    while (isActive) {
+                        val latest = withContext(Dispatchers.IO) {
+                            RecordingStatusBridge.read(this@MainActivity)
+                        }
+                        GameplayRuntime.update(latest)
+                        delay(1_500L)
                     }
-                    GameplayRuntime.update(latest)
-                    delay(1_500L)
                 }
             }
             val appearance = rememberAppearanceSettings()
@@ -111,6 +118,17 @@ private fun ControlCenter(
     var section by rememberSaveable { mutableStateOf(normalizeO2PSection(initialSection)) }
     BackHandler(enabled = section != "Underclock") { section = "Underclock" }
     val monitor: MonitorViewModel = viewModel()
+    val foregroundActivity = LocalContext.current as? ComponentActivity
+    DisposableEffect(foregroundActivity, monitor) {
+        // Live Monitor is a UI-only preview. It must not become a second
+        // background sensor collector competing with Eden and gameplay FGS.
+        // The separate GameplayMonitorService remains untouched by this call.
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) monitor.stop()
+        }
+        foregroundActivity?.lifecycle?.addObserver(observer)
+        onDispose { foregroundActivity?.lifecycle?.removeObserver(observer) }
+    }
     val live by monitor.state.collectAsState()
     val gameplay by GameplayRuntime.state.collectAsState()
     BoxWithConstraints(
