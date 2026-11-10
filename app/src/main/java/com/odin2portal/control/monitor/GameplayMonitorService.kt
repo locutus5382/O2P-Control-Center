@@ -80,7 +80,7 @@ class GameplayMonitorService : Service() {
         hudSettings = HudPreferences(applicationContext)
         hudOverlay = HudOverlay(this, hudSettings)
         journal = SessionReliabilityJournal(applicationContext)
-        journal.event("SERVICE_CREATED")
+        journal.event("SERVICE_CREATED", "pid=" + android.os.Process.myPid())
         val channel = NotificationChannel(
             CHANNEL_ID, "O2P Gameplay Monitoring", NotificationManager.IMPORTANCE_LOW
         ).apply {
