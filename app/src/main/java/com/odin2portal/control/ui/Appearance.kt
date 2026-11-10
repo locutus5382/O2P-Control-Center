@@ -26,6 +26,9 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -105,13 +108,16 @@ fun makeO2PColors(id: String, family: ThemeFamily = ThemeFamily.OBSIDIAN): O2PCo
         ThemeFamily.VIOLET -> Color(0xFF2A1C40)
         ThemeFamily.DECKY -> Color(0xFF202B34)
     }
+    // Quiet neutral canvas, colorful highlights. Saturating every surface
+    // equally makes important actions impossible to spot.
     val tint = when (family) {
-        ThemeFamily.AERO -> 0.14f
-        ThemeFamily.DECKY -> 0.055f
-        else -> 0.14f
+        ThemeFamily.AERO -> 0.045f
+        ThemeFamily.DECKY -> 0.020f
+        else -> 0.052f
     }
     val canvas = lerp(baseCanvas, accent, tint)
-    val panel = lerp(basePanel, accent, if (light) 0.10f else if (family == ThemeFamily.DECKY) 0.07f else 0.15f)
+    val panel = lerp(basePanel, accent,
+        if (light) 0.045f else if (family == ThemeFamily.DECKY) 0.035f else 0.08f)
     return O2PColors(
         accent = accent,
         ink = if (light) Color(0xFF142133) else Color(0xFFF4F6FA),
@@ -124,10 +130,11 @@ fun makeO2PColors(id: String, family: ThemeFamily = ThemeFamily.OBSIDIAN): O2PCo
             ThemeFamily.OBSIDIAN -> Color(0xFF030710)
         },
         panel = panel,
-        panelAlt = lerp(panel, accent, if (light) 0.10f else if (family == ThemeFamily.DECKY) 0.07f else 0.15f),
-        outline = if (light) Color(0xFF26374D).copy(alpha = 0.19f)
-                  else if (family == ThemeFamily.DECKY) Color.White.copy(alpha = 0.15f)
-                  else Color.White.copy(alpha = 0.25f),
+        panelAlt = lerp(panel, accent,
+            if (light) 0.08f else if (family == ThemeFamily.DECKY) 0.055f else 0.13f),
+        outline = if (light) Color(0xFF26374D).copy(alpha = 0.37f)
+                  else if (family == ThemeFamily.DECKY) Color.White.copy(alpha = 0.34f)
+                  else Color.White.copy(alpha = 0.40f),
         onAccent = if (accent.luminance() >= 0.46f) Color(0xFF111827) else Color.White,
         light = light
     )
@@ -288,15 +295,18 @@ fun O2PPanel(
     ) else Brush.linearGradient(listOf(c.panel, c.panel))
     val rim = if (glass) Brush.linearGradient(
         listOf(
-            if (c.light) Color.White.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.47f),
-            c.accent.copy(alpha = 0.20f),
+            if (c.light) Color.White.copy(alpha = 0.97f) else Color.White.copy(alpha = 0.59f),
+            c.accent.copy(alpha = if (c.light) .35f else .42f),
             c.outline
         )
-    ) else Brush.linearGradient(listOf(c.outline, c.outline))
+    ) else Brush.linearGradient(listOf(
+        if (c.light) Color.White.copy(alpha = .55f) else Color.White.copy(alpha = .23f),
+        c.outline
+    ))
     Column(
         modifier = modifier
             .shadow(
-                elevation = if (glass) 11.dp else 2.dp,
+                elevation = if (glass) 11.dp else 5.dp,
                 shape = shape,
                 clip = false,
                 ambientColor = c.accent.copy(alpha = if (c.light) 0.16f else 0.22f),
@@ -304,7 +314,7 @@ fun O2PPanel(
             )
             .clip(shape)
             .background(fill)
-            .border(if (glass) 1.2.dp else 0.7.dp, rim, shape)
+            .border(if (glass) 1.25.dp else 1.05.dp, rim, shape)
             .padding(if (glass) 15.dp else 14.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
@@ -316,7 +326,17 @@ fun O2PPanel(
     }
 }
 
-/** Tactile button: scale on press and a diagonal specular highlight on click. */
+/**
+ * High-legibility action control shared across all 18 colorways.
+ *
+ * Glass: translucent layered fill + specular edge.
+ * Decky/material: tactile, raised/pressed soft surface with a visible outline.
+ *
+ * Press once => a brief highlight travels clockwise along the button's ACTUAL
+ * rounded-rectangle perimeter. This is NOT a spinning full-screen effect, does
+ * not use background blur or per-frame telemetry, and honors Android's Compose
+ * system animation duration scale. Controller focus remains clear at rest.
+ */
 @Composable
 fun O2PAction(
     label: String,
@@ -324,96 +344,177 @@ fun O2PAction(
     modifier: Modifier = Modifier,
     primary: Boolean = false,
     enabled: Boolean = true,
+    destructive: Boolean = false,
     onClick: () -> Unit
 ) {
     val c = settings.colors
     val glass = settings.style == VisualStyle.GLASS
-    val progress = remember { Animatable(-1.0f) }
-    val scope = rememberCoroutineScope()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var focused by remember { mutableStateOf(false) }
+    val orbit = remember { Animatable(0f) }
+    var orbitVisible by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.935f else 1f,
-        animationSpec = tween(durationMillis = 140),
-        label = "pressScale"
+        targetValue = if (pressed && enabled) 0.968f else 1f,
+        animationSpec = tween(durationMillis = 135),
+        label = "o2pPressDepth"
     )
-    val shape = RoundedCornerShape(if (glass) 13.dp else 10.dp)
-    val rimPulse = (1f - kotlin.math.abs(progress.value - 0.25f) / 1.2f).coerceIn(0f, 1f)
-    val solid = if (primary) c.accent else c.panelAlt
-    val text = if (primary) c.onAccent else c.ink
-    val fill = if (glass) Brush.linearGradient(
-        listOf(
-            if (primary) lerp(solid, Color.White, if (c.light) 0.08f else 0.15f)
-            else c.panelAlt.copy(alpha = 0.82f),
-            solid.copy(alpha = if (primary) 0.89f else 0.73f)
+    val shape = RoundedCornerShape(if (glass) 14.dp else 11.dp)
+    // Information hierarchy: only primary/selected actions carry a solid
+    // accent. Ordinary actions keep legible, lightly textured surfaces.
+    val danger = Color(0xFFC74956)
+    val solid = when {
+        destructive -> danger
+        primary -> c.accent
+        else -> c.panelAlt
+    }
+    val textColor = when {
+        destructive -> Color.White
+        primary -> c.onAccent
+        else -> c.ink
+    }
+    val rim = when {
+        !enabled -> c.outline
+        focused -> if (c.light) Color(0xFF17539D) else Color(0xFFFFE4A0)
+        destructive -> if (c.light) Color(0xFF76222B) else Color(0xFFFFB5BE)
+        primary && solid.luminance() > 0.48f -> Color(0xFF17263B)
+        primary -> Color(0xFFE3EDFF)
+        c.light -> Color(0xFF40536B)
+        else -> Color(0xFFBBCDE6)
+    }
+    val fill: Brush = if (glass) {
+        Brush.linearGradient(
+            listOf(
+                lerp(solid, Color.White, if (c.light) 0.18f else 0.14f)
+                    .copy(alpha = if (primary || destructive) .99f else .91f),
+                solid.copy(alpha = if (primary || destructive) .94f else .84f),
+                lerp(solid, c.canvas, 0.13f).copy(alpha = .96f)
+            )
         )
-    ) else Brush.linearGradient(listOf(solid, solid))
+    } else {
+        // A modest highlight and lower shadow rather than low-contrast
+        // monochrome neumorphism, which obscures button boundaries.
+        Brush.verticalGradient(
+            if (pressed) listOf(lerp(solid, c.canvas, .11f), solid)
+            else listOf(lerp(solid, Color.White, if (c.light) .10f else .09f),
+                lerp(solid, c.canvas, .065f))
+        )
+    }
+
     Box(
         modifier = modifier
-            .heightIn(min = 38.dp)
+            .heightIn(min = 46.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-                alpha = if (enabled) 1f else 0.45f
+                alpha = if (enabled) 1f else 0.52f
             }
+            .shadow(
+                elevation = if (!enabled) 0.dp else if (pressed) 1.dp
+                    else if (primary || destructive) 7.dp else if (glass) 4.dp else 3.dp,
+                shape = shape,
+                ambientColor = if (primary || destructive) solid.copy(alpha = .32f)
+                    else Color.Black.copy(alpha = .18f),
+                spotColor = Color.Black.copy(alpha = .26f)
+            )
             .clip(shape)
             .background(fill)
             .border(
-                if (focused) 2.dp else 0.8.dp,
-                if (focused) c.accent else if (glass) {
-                    if (primary) Color.White.copy(alpha = 0.40f + rimPulse * 0.42f)
-                    else c.outline.copy(alpha = (c.outline.alpha + rimPulse * 0.40f).coerceAtMost(1f))
-                } else if (focused) c.accent else c.outline,
+                when {
+                    focused -> 2.8.dp
+                    primary || destructive -> 1.9.dp
+                    else -> 1.5.dp
+                },
+                rim,
                 shape
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable(interactionSource = interaction, indication = null, enabled = enabled) {
-                if (glass && settings.lightSweep) {
+                if (settings.lightSweep) {
                     scope.launch {
-                        progress.stop()
-                        progress.snapTo(-1f)
-                        progress.animateTo(1.8f, tween(720, easing = FastOutSlowInEasing))
+                        orbit.stop()
+                        orbit.snapTo(0f)
+                        orbitVisible = true
+                        try {
+                            orbit.animateTo(1f, tween(620, easing = FastOutSlowInEasing))
+                        } finally {
+                            orbitVisible = false
+                        }
                     }
                 }
                 onClick()
             },
         contentAlignment = Alignment.Center
     ) {
-        // Strong diagonal specular sweep over 720 ms; only animates when tapped.
-        if (glass && settings.lightSweep) {
-            Canvas(Modifier.matchParentSize()) {
-                if (progress.value > -0.98f && progress.value < 1.75f) {
-                    val cx = progress.value * size.width
-                    drawRect(
+        if (glass) {
+            // Glass without GPU-intensive real-time backdrop blur: a static
+            // interior edge reflection over a semitransparent surface.
+            Box(
+                Modifier.matchParentSize().padding(3.dp)
+                    .border(
+                        .8.dp,
                         Brush.linearGradient(
-                            listOf(
+                            listOf(Color.White.copy(alpha = if (c.light) .78f else .35f),
                                 Color.Transparent,
-                                Color.White.copy(alpha = if (c.light) 0.80f else 0.70f),
-                                Color.Transparent
-                            ),
-                            start = Offset(cx - 42f, -30f),
-                            end = Offset(cx + 42f, size.height + 30f)
-                        )
+                                c.accent.copy(alpha = .13f))
+                        ),
+                        RoundedCornerShape(11.dp)
                     )
+            )
+        }
+
+        if (orbitVisible && enabled) {
+            Canvas(Modifier.matchParentSize()) {
+                val inset = 3.dp.toPx()
+                val width = size.width - 2f * inset
+                val height = size.height - 2f * inset
+                if (width > 0f && height > 0f) {
+                    // Android's PathMeasure traces the *actual* round-rect
+                    // path; a short bright arc travels around it exactly once.
+                    val path = android.graphics.Path().apply {
+                        addRoundRect(
+                            inset, inset, size.width - inset, size.height - inset,
+                            if (glass) 14.dp.toPx() else 11.dp.toPx(),
+                            if (glass) 14.dp.toPx() else 11.dp.toPx(),
+                            android.graphics.Path.Direction.CW
+                        )
+                    }
+                    val measure = android.graphics.PathMeasure(path, true)
+                    val length = measure.length
+                    if (length > 0f) {
+                        val arc = android.graphics.Path()
+                        val head = orbit.value * length
+                        val trail = length * 0.17f
+                        val start = (head - trail + length) % length
+                        val end = head % length
+                        if (start <= end) measure.getSegment(start, end, arc, true)
+                        else {
+                            measure.getSegment(start, length, arc, true)
+                            measure.getSegment(0f, end, arc, true)
+                        }
+                        val paint = android.graphics.Paint(
+                            android.graphics.Paint.ANTI_ALIAS_FLAG
+                        ).apply {
+                            style = android.graphics.Paint.Style.STROKE
+                            strokeWidth = 3.0.dp.toPx()
+                            strokeCap = android.graphics.Paint.Cap.ROUND
+                            color = if (c.light) Color(0xFF163B70).toArgb()
+                                else Color(0xFFFFF5DA).toArgb()
+                            alpha = (255f * if (orbit.value < .78f) 1f
+                                else ((1f - orbit.value) / .22f).coerceIn(0f, 1f))
+                                .toInt().coerceIn(0, 255)
+                        }
+                        drawIntoCanvas { it.nativeCanvas.drawPath(arc, paint) }
+                    }
                 }
             }
         }
-        if (glass) {
-            Box(Modifier.matchParentSize().padding(1.dp).border(
-                0.8.dp,
-                Brush.linearGradient(listOf(
-                    Color.White.copy(alpha = 0.22f + rimPulse * 0.35f),
-                    c.accent.copy(alpha = 0.20f),
-                    Color.White.copy(alpha = 0.10f + rimPulse * 0.15f)
-                )),
-                shape
-            ))
-        }
         Text(
-            label, color = text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            style = O2PTypography.labelLarge,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+            label, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            style = O2PTypography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)
         )
     }
 }

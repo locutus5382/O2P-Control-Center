@@ -634,12 +634,15 @@ private fun AppearancePage(settings: AppearanceSettings) {
                     style = MaterialTheme.typography.labelLarge)
                 Slider(value = settings.glassOpacity, onValueChange = settings::setOpacity,
                     valueRange = 0.58f..0.96f)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Light sweep on touch", Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = settings.lightSweep, onCheckedChange = settings::setSweep)
-                }
             }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Animated press-outline (all themes)", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = settings.lightSweep, onCheckedChange = settings::setSweep)
+            }
+            Text("A single clockwise highlight follows the button border when activated. No continuous animation.",
+                style = MaterialTheme.typography.labelSmall,
+                color = settings.colors.muted)
         }
     }, right = {
         O2PPanel(settings) {
@@ -650,8 +653,9 @@ private fun AppearancePage(settings: AppearanceSettings) {
                 MetricTile(settings, "CPU", "—", "Visual preview", Modifier.weight(1f))
                 MetricTile(settings, "GPU", "—", "Visual preview", Modifier.weight(1f))
             }
-            O2PAction("Tap to see the light travel", settings,
+            O2PAction("Press to preview the perimeter light", settings,
                 Modifier.fillMaxWidth(), primary = true) {}
+            O2PAction("Secondary control", settings, Modifier.fillMaxWidth()) {}
             Text("Preview uses placeholders—not live device measurements.",
                 color = settings.colors.muted, style = MaterialTheme.typography.labelSmall)
         }
