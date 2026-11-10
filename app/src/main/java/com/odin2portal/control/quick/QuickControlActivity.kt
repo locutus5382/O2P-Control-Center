@@ -289,11 +289,24 @@ private fun SessionQuickPanel(appearance: AppearanceSettings, dismiss: () -> Uni
             }
         }
         val journal = remember { SessionReliabilityJournal(context.applicationContext) }
-        Text("Session lifecycle: " + journal.status(),
+        Text("Session lifecycle: " + (status.lifecycleStatus ?: journal.status()),
             color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
-        journal.events().takeLast(4).reversed().forEach { item ->
-            Text(item, style = MaterialTheme.typography.labelSmall,
-                color = appearance.colors.muted)
+        status.monitorProcessId?.let { pid ->
+            Text("Recorder process: " + pid,
+                color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+        }
+        (status.lifecycleEvents.ifEmpty { journal.events() }).takeLast(4).reversed()
+            .forEach { item ->
+                Text(item, style = MaterialTheme.typography.labelSmall,
+                    color = appearance.colors.muted)
+            }
+        O2PAction("Share recorder lifecycle report", appearance, Modifier.fillMaxWidth()) {
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "O2P recording lifecycle report")
+                putExtra(Intent.EXTRA_TEXT, RecordingStatusBridge.diagnosticReport(status))
+            }
+            context.startActivity(Intent.createChooser(share, "Share recording report"))
         }
         Text("HUD: " + (status.hudDiagnostic ?: "No running HUD diagnostic"),
             color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
