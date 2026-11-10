@@ -46,6 +46,15 @@ class QuickControlActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val which = if (intent?.action == ACTION_SESSION) "session" else "profile"
         setContent {
+            LaunchedEffect(Unit) {
+                while (isActive) {
+                    val latest = withContext(Dispatchers.IO) {
+                        RecordingStatusBridge.read(this@QuickControlActivity)
+                    }
+                    GameplayRuntime.update(latest)
+                    delay(1_500L)
+                }
+            }
             val appearance = rememberAppearanceSettings()
             O2PTheme(appearance) {
                 O2PBackdrop(appearance) {
