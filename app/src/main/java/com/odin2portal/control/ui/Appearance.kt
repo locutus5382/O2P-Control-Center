@@ -108,13 +108,16 @@ fun makeO2PColors(id: String, family: ThemeFamily = ThemeFamily.OBSIDIAN): O2PCo
         ThemeFamily.VIOLET -> Color(0xFF2A1C40)
         ThemeFamily.DECKY -> Color(0xFF202B34)
     }
+    // Quiet neutral canvas, colorful highlights. Saturating every surface
+    // equally makes important actions impossible to spot.
     val tint = when (family) {
-        ThemeFamily.AERO -> 0.14f
-        ThemeFamily.DECKY -> 0.055f
-        else -> 0.14f
+        ThemeFamily.AERO -> 0.045f
+        ThemeFamily.DECKY -> 0.020f
+        else -> 0.052f
     }
     val canvas = lerp(baseCanvas, accent, tint)
-    val panel = lerp(basePanel, accent, if (light) 0.10f else if (family == ThemeFamily.DECKY) 0.07f else 0.15f)
+    val panel = lerp(basePanel, accent,
+        if (light) 0.045f else if (family == ThemeFamily.DECKY) 0.035f else 0.08f)
     return O2PColors(
         accent = accent,
         ink = if (light) Color(0xFF142133) else Color(0xFFF4F6FA),
@@ -127,10 +130,11 @@ fun makeO2PColors(id: String, family: ThemeFamily = ThemeFamily.OBSIDIAN): O2PCo
             ThemeFamily.OBSIDIAN -> Color(0xFF030710)
         },
         panel = panel,
-        panelAlt = lerp(panel, accent, if (light) 0.10f else if (family == ThemeFamily.DECKY) 0.07f else 0.15f),
-        outline = if (light) Color(0xFF26374D).copy(alpha = 0.19f)
-                  else if (family == ThemeFamily.DECKY) Color.White.copy(alpha = 0.15f)
-                  else Color.White.copy(alpha = 0.25f),
+        panelAlt = lerp(panel, accent,
+            if (light) 0.08f else if (family == ThemeFamily.DECKY) 0.055f else 0.13f),
+        outline = if (light) Color(0xFF26374D).copy(alpha = 0.37f)
+                  else if (family == ThemeFamily.DECKY) Color.White.copy(alpha = 0.34f)
+                  else Color.White.copy(alpha = 0.40f),
         onAccent = if (accent.luminance() >= 0.46f) Color(0xFF111827) else Color.White,
         light = light
     )
@@ -291,15 +295,18 @@ fun O2PPanel(
     ) else Brush.linearGradient(listOf(c.panel, c.panel))
     val rim = if (glass) Brush.linearGradient(
         listOf(
-            if (c.light) Color.White.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.47f),
-            c.accent.copy(alpha = 0.20f),
+            if (c.light) Color.White.copy(alpha = 0.97f) else Color.White.copy(alpha = 0.59f),
+            c.accent.copy(alpha = if (c.light) .35f else .42f),
             c.outline
         )
-    ) else Brush.linearGradient(listOf(c.outline, c.outline))
+    ) else Brush.linearGradient(listOf(
+        if (c.light) Color.White.copy(alpha = .55f) else Color.White.copy(alpha = .23f),
+        c.outline
+    ))
     Column(
         modifier = modifier
             .shadow(
-                elevation = if (glass) 11.dp else 2.dp,
+                elevation = if (glass) 11.dp else 5.dp,
                 shape = shape,
                 clip = false,
                 ambientColor = c.accent.copy(alpha = if (c.light) 0.16f else 0.22f),
@@ -307,7 +314,7 @@ fun O2PPanel(
             )
             .clip(shape)
             .background(fill)
-            .border(if (glass) 1.2.dp else 0.7.dp, rim, shape)
+            .border(if (glass) 1.25.dp else 1.05.dp, rim, shape)
             .padding(if (glass) 15.dp else 14.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
