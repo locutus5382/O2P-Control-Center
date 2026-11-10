@@ -20,7 +20,6 @@ object ProcessMemoryMetrics {
             Debug.getMemoryInfo(info)
             result.putInt("pssKB", info.totalPss)
             result.putInt("privateDirtyKB", info.totalPrivateDirty)
-            result.putInt("swapPssKB", info.totalSwappedOutPss)
         } catch (e: Exception) {
             result.putString("error", e.javaClass.simpleName + ": " + (e.message ?: "memory unavailable"))
         }
@@ -51,7 +50,6 @@ object ProcessMemoryMetrics {
         for ((key, title) in listOf(
             "pssKB" to "PSS (proportional physical memory)",
             "privateDirtyKB" to "Private dirty memory",
-            "swapPssKB" to "Proportional swap memory",
             "rssKB" to "RSS (shared memory double-counted)",
             "peakRssKB" to "Peak RSS since process creation"
         )) {
