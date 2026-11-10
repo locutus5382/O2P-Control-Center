@@ -53,6 +53,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            // Read status from :monitor instead of a stale local singleton.
+            // Query only while this Activity's composition is alive.
+            LaunchedEffect(Unit) {
+                while (isActive) {
+                    val latest = withContext(Dispatchers.IO) {
+                        RecordingStatusBridge.read(this@MainActivity)
+                    }
+                    GameplayRuntime.update(latest)
+                    delay(1_500L)
+                }
+            }
             val appearance = rememberAppearanceSettings()
             val model: DashboardViewModel = viewModel()
             val state by model.state.collectAsState()
