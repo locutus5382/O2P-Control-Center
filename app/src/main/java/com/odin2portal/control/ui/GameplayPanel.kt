@@ -196,7 +196,8 @@ fun GameplayPanel(appearance: AppearanceSettings) {
             StatusLine("Saved history intervals", status.intervalsSaved.toString(), appearance)
 
             if (status.running || status.starting) {
-                O2PAction("Stop recording", appearance, Modifier.fillMaxWidth(), primary = true) {
+                O2PAction("Stop recording", appearance, Modifier.fillMaxWidth(),
+                    primary = true, destructive = true) {
                     context.startService(Intent(context, GameplayMonitorService::class.java)
                         .setAction(GameplayMonitorService.ACTION_STOP))
                 }
