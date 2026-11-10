@@ -318,7 +318,15 @@ fun O2PPanel(
             .padding(if (glass) 15.dp else 14.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
-        CompositionLocalProvider/**
+        CompositionLocalProvider(LocalContentColor provides c.ink) {
+            ProvideTextStyle(O2PTypography.bodyMedium) {
+                content()
+            }
+        }
+    }
+}
+
+/**
  * High-legibility action control shared across all 18 colorways.
  *
  * Glass: translucent layered fill + specular edge.
