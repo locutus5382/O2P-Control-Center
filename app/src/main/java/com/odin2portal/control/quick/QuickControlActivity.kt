@@ -147,7 +147,7 @@ private fun ProfileQuickPanel(appearance: AppearanceSettings, dismiss: () -> Uni
 
     O2PPanel(appearance) {
         Text("O2P PROFILE · QUICK ACCESS", style = MaterialTheme.typography.titleLarge)
-        Text("These are READ-ONLY underclock previews. PServer and OEM Stock are not verified, so this tile CANNOT change clocks.",
+        Text("These are read-only profile previews. The privileged PServer read-only host has been tested, but no safe CPU/GPU writer or verified Stock restoration is enabled in this build. This tile does not change clocks.",
             color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (catalogue?.domains?.isNotEmpty() != true) {
