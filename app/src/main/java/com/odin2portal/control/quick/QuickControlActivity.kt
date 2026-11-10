@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.odin2portal.control.R
 import com.odin2portal.control.monitor.*
 import com.odin2portal.control.studio.*
@@ -47,12 +49,16 @@ class QuickControlActivity : ComponentActivity() {
         val which = if (intent?.action == ACTION_SESSION) "session" else "profile"
         setContent {
             LaunchedEffect(Unit) {
-                while (isActive) {
-                    val latest = withContext(Dispatchers.IO) {
-                        RecordingStatusBridge.read(this@QuickControlActivity)
+                // Do not poll :monitor after this transient Quick Settings panel
+                // has lost visibility to a game.
+                this@QuickControlActivity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    while (isActive) {
+                        val latest = withContext(Dispatchers.IO) {
+                            RecordingStatusBridge.read(this@QuickControlActivity)
+                        }
+                        GameplayRuntime.update(latest)
+                        delay(1_500L)
                     }
-                    GameplayRuntime.update(latest)
-                    delay(1_500L)
                 }
             }
             val appearance = rememberAppearanceSettings()
