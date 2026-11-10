@@ -511,13 +511,6 @@ fun O2PAction(
     }
 }
 
-.Ellipsis,
-            style = O2PTypography.labelLarge,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
-        )
-    }
-}
-
 /** Two independent panes instead of stretching a portrait screen across landscape. */
 @Composable
 fun O2PColumns(
