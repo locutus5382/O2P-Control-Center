@@ -85,17 +85,18 @@ class SessionQuickTileService : O2PBaseTileService() {
     override val panel: String = "session"
 
     override fun updatePresentation() {
-        val current = GameplayRuntime.state.value
+        // The recorder runs in :monitor. This tile's own process cannot use
+        // GameplayRuntime's in-memory StateFlow as a service-liveness signal.
+        val current = RecordingStatusBridge.read(applicationContext)
         display(
             "O2P Session",
             when {
                 current.running -> "Recording · tap for Stop / Refresh HUD"
                 current.starting -> "Starting · tap for controls"
-                else -> {
-                    val journal = SessionReliabilityJournal(applicationContext)
-                    if (journal.lease() != null) "Recording interrupted/recovery pending · tap"
-                    else "Stopped · tap to Start"
-                }
+                current.recoveryPending -> "Session interrupted / recovery pending · tap"
+                current.lifecycleStatus?.startsWith("Cannot query") == true ->
+                    "Recorder unavailable · tap for diagnostics"
+                else -> "Stopped · tap to Start"
             },
             active = current.running
         )
