@@ -304,7 +304,7 @@ private fun SessionQuickPanel(appearance: AppearanceSettings, dismiss: () -> Uni
             val share = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_SUBJECT, "O2P recording lifecycle report")
-                putExtra(Intent.EXTRA_TEXT, RecordingStatusBridge.diagnosticReport(status))
+                putExtra(Intent.EXTRA_TEXT, RecordingStatusBridge.diagnosticReport(context.applicationContext, status))
             }
             context.startActivity(Intent.createChooser(share, "Share recording report"))
         }
