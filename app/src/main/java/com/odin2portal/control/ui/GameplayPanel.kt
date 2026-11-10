@@ -188,7 +188,7 @@ fun GameplayPanel(
                         color = appearance.colors.muted)
                 }
             O2PAction("Share recorder lifecycle report", appearance, Modifier.fillMaxWidth()) {
-                val report = RecordingStatusBridge.diagnosticReport(status)
+                val report = RecordingStatusBridge.diagnosticReport(context.applicationContext, status)
                 val share = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_SUBJECT, "O2P recording lifecycle report")
