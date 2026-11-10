@@ -91,6 +91,9 @@ class GameplayMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        journal.event("SERVICE_COMMAND",
+            "pid=" + android.os.Process.myPid() + " startId=" + startId +
+            " action=" + (intent?.action ?: "STICKY_NULL") + " flags=" + flags)
         if (intent?.action == ACTION_TOGGLE_HUD ||
             intent?.action == ACTION_REFRESH_HUD ||
             intent?.action == ACTION_REATTACH_HUD) {
