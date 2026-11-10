@@ -136,7 +136,7 @@ fun GameplayPanel(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 MetricTile(appearance, "CPU",
-                    status.latestSample?.get(Metric.SOC_TEMP)?.display ?: "—",
+                    status.latestSample?.get(Metric.SOC_TEMP)?.display ?: status.cpuDisplay ?: "—",
                     "Peak reported sensor", Modifier.weight(1f))
                 MetricTile(appearance, "GPU",
                     status.latestSample?.get(Metric.GPU_TEMP)?.display ?: "—",
