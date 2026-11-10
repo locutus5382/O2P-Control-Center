@@ -172,7 +172,7 @@ private fun ControlCenter(
                 }
                 Spacer(Modifier.height(10.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    ScreenContent(section, state, appearance, live, monitor, refresh, export)
+                    ScreenContent(section, state, appearance, refresh, export)
                 }
             }
         }
