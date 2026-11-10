@@ -175,12 +175,26 @@ fun GameplayPanel(
                 style = MaterialTheme.typography.bodySmall,
                 color = appearance.colors.muted)
             val journal = remember { SessionReliabilityJournal(context.applicationContext) }
-            Text("Service lifecycle: " + journal.status(),
+            Text("Service lifecycle: " + (status.lifecycleStatus ?: journal.status()),
                 style = MaterialTheme.typography.bodySmall,
                 color = appearance.colors.muted)
-            journal.events().takeLast(5).reversed().forEach { logLine ->
-                Text(logLine, style = MaterialTheme.typography.labelSmall,
-                    color = appearance.colors.muted)
+            status.monitorProcessId?.let { processId ->
+                Text("Recorder process: " + processId + " (separate from app UI)",
+                    style = MaterialTheme.typography.bodySmall, color = appearance.colors.muted)
+            }
+            (status.lifecycleEvents.ifEmpty { journal.events() }).takeLast(5).reversed()
+                .forEach { logLine ->
+                    Text(logLine, style = MaterialTheme.typography.labelSmall,
+                        color = appearance.colors.muted)
+                }
+            O2PAction("Share recorder lifecycle report", appearance, Modifier.fillMaxWidth()) {
+                val report = RecordingStatusBridge.diagnosticReport(status)
+                val share = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "O2P recording lifecycle report")
+                    putExtra(Intent.EXTRA_TEXT, report)
+                }
+                context.startActivity(Intent.createChooser(share, "Share recording report"))
             }
             status.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             uiMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
