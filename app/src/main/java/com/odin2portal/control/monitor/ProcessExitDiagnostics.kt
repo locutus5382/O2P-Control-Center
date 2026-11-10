@@ -31,7 +31,7 @@ object ProcessExitDiagnostics {
         }
 
         val supportsLmkReason = runCatching {
-            manager.isLowMemoryKillReportSupported
+            ActivityManager.isLowMemoryKillReportSupported()
         }.getOrNull()
         appendLine("Explicit LOW_MEMORY reporting supported: " +
             (supportsLmkReason?.toString() ?: "unknown"))
