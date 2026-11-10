@@ -117,7 +117,7 @@ object RecordingStatusBridge {
         )
     }
 
-    fun diagnosticReport(status: GameplayStatus): String = buildString {
+    fun diagnosticReport(context: Context, status: GameplayStatus): String = buildString {
         appendLine("O2P RECORDER PROCESS / LIFECYCLE REPORT")
         appendLine("No hardware tuning or sysfs writes by this build.")
         appendLine("Service process pid: " + (status.monitorProcessId?.toString() ?: "unavailable"))
