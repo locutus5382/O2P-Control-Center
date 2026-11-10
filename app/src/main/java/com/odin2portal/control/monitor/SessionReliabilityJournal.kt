@@ -107,7 +107,10 @@ class SessionReliabilityJournal(context: Context) {
             .put("stop", value.stopRequested)
             .put("pid", value.processId)
             .put("event", value.lastEvent)
-        prefs.edit().putString("lease", o.toString()).apply()
+        // The process can be killed abruptly under emulator RAM pressure.
+        // A tiny 10-secondly synchronous checkpoint avoids losing the lease
+        // while SharedPreferences.apply() still has an unwritten disk commit.
+        prefs.edit().putString("lease", o.toString()).commit()
     }
 }
 
