@@ -11,8 +11,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.odin2portal.control.hardware.AccessMode
-import com.odin2portal.control.quick.QuickTileInstallActions
-import com.odin2portal.control.quick.QuickProfilePreferences
 import com.odin2portal.control.studio.*
 import java.util.Locale
 
@@ -28,8 +26,6 @@ fun PerformanceStudioPage(
 ) {
     val context = LocalContext.current
     val store = remember(context) { StudioProfileStore(context.applicationContext) }
-    val quickPrefs = remember(context) { QuickProfilePreferences(context.applicationContext) }
-    var qsTapCycle by remember { mutableStateOf(quickPrefs.cycleOnTap) }
     val catalog = remember(state.result?.capturedAtUtc) {
         state.result?.let { StudioDiscovery.fromSnapshot(it, Build.FINGERPRINT) }
     }
@@ -87,19 +83,6 @@ fun PerformanceStudioPage(
             Text(if (proMode) "Exact discovered frequency steps · preview only" else
                 "Choose a profile. Inspect its limits before hardware controls become available.",
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
-            QuickTileInstallActions(appearance, session = false)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Quick Settings: tap to cycle", style = MaterialTheme.typography.labelLarge)
-                    Text("When OFF, tapping O2P Profile opens the picker. Cycling changes PREVIEWS only.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = appearance.colors.muted)
-                }
-                Switch(checked = qsTapCycle, onCheckedChange = {
-                    quickPrefs.setCycleOnTap(it)
-                    qsTapCycle = it
-                })
-            }
             Text("Underclock-only design. No frequencies are changed in this preview.",
                 color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

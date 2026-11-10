@@ -32,7 +32,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
 import com.odin2portal.control.hardware.PServerReadOnlyHostClient
 import com.odin2portal.control.discovery.DiagnosticJsonExporter
@@ -44,7 +43,6 @@ import com.odin2portal.control.hardware.AccessMode
 import com.odin2portal.control.quick.QuickTileUpdates
 import com.odin2portal.control.monitor.GameplayRuntime
 import com.odin2portal.control.monitor.RecordingStatusBridge
-import com.odin2portal.control.monitor.MonitorViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -117,19 +115,8 @@ private fun ControlCenter(
 ) {
     var section by rememberSaveable { mutableStateOf(normalizeO2PSection(initialSection)) }
     BackHandler(enabled = section != "Underclock") { section = "Underclock" }
-    val monitor: MonitorViewModel = viewModel()
-    val foregroundActivity = LocalContext.current as? ComponentActivity
-    DisposableEffect(foregroundActivity, monitor) {
-        // Live Monitor is a UI-only preview. It must not become a second
-        // background sensor collector competing with Eden and gameplay FGS.
-        // The separate GameplayMonitorService remains untouched by this call.
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) monitor.stop()
-        }
-        foregroundActivity?.lifecycle?.addObserver(observer)
-        onDispose { foregroundActivity?.lifecycle?.removeObserver(observer) }
-    }
-    val live by monitor.state.collectAsState()
+    // No UI-only telemetry sampler. The dedicated recording foreground service
+    // is the sole collector, and only exists after a user-started session.
     val gameplay by GameplayRuntime.state.collectAsState()
     BoxWithConstraints(
         Modifier.fillMaxSize().onPreviewKeyEvent { event ->
@@ -168,7 +155,7 @@ private fun ControlCenter(
                     Spacer(Modifier.height(12.dp))
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ScreenContent(section, state, appearance, live, monitor, refresh, export)
+                        ScreenContent(section, state, appearance, refresh, export)
                         Spacer(Modifier.height(10.dp))
                     }
                 }
@@ -185,7 +172,7 @@ private fun ControlCenter(
                 }
                 Spacer(Modifier.height(10.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    ScreenContent(section, state, appearance, live, monitor, refresh, export)
+                    ScreenContent(section, state, appearance, refresh, export)
                 }
             }
         }
@@ -217,44 +204,21 @@ private fun ScreenContent(
     section: String,
     state: DashboardState,
     appearance: AppearanceSettings,
-    live: com.odin2portal.control.monitor.MonitorState,
-    monitor: MonitorViewModel,
     refresh: (AccessMode) -> Unit,
     export: (DeviceSnapshot) -> Unit
 ) {
     when (section) {
         "Underclock" -> PerformanceStudioPage(appearance, state, refresh)
-        "Telemetry" -> TelemetryDestination(appearance, live, monitor)
+        "Telemetry" -> TelemetryDestination(appearance)
         "Advanced" -> AdvancedDestination(appearance)
         "Diagnostics" -> DiagnosticsGate(state, appearance, refresh, export)
     }
 }
 
-/** One telemetry destination, with existing live monitor and HUD/session views. */
+/** One telemetry destination. No independent live-preview sampler. */
 @Composable
-private fun TelemetryDestination(
-    appearance: AppearanceSettings,
-    live: com.odin2portal.control.monitor.MonitorState,
-    monitor: MonitorViewModel
-) {
-    var view by rememberSaveable { mutableStateOf("Live") }
-    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        O2PAction("Live metrics", appearance, Modifier.weight(1f),
-            primary = view == "Live") { view = "Live" }
-        O2PAction("Recording / HUD / History", appearance, Modifier.weight(1f),
-            primary = view == "Sessions") { view = "Sessions" }
-    }
-    if (view == "Live") {
-        MonitorPanel(appearance)
-    } else {
-        GameplayPanel(
-            appearance = appearance,
-            onBegin = monitor::stop,
-            sampleMs = live.intervalMs,
-            recordMs = live.recordingIntervalMs,
-            manualLabel = live.sessionLabel
-        )
-    }
+private fun TelemetryDestination(appearance: AppearanceSettings) {
+    GameplayPanel(appearance = appearance)
 }
 
 /** Device settings only link to native Android; no privileged display writes. */
@@ -286,10 +250,9 @@ private fun AdvancedDestination(settings: AppearanceSettings) {
     }, right = {
         O2PPanel(settings) {
             Text("QUICK ACTIONS", style = MaterialTheme.typography.titleMedium)
-            Text("Profile tile currently selects previews only. Session tile manages recording and HUD.",
+            Text("One Quick Settings tile starts or stops a telemetry session. Configure monitoring, HUD and history in the main app.",
                 color = settings.colors.muted)
-            com.odin2portal.control.quick.QuickTileInstallActions(settings, session = false)
-            com.odin2portal.control.quick.QuickTileInstallActions(settings, session = true)
+            com.odin2portal.control.quick.QuickTileInstallActions(settings)
             Text("Tuning and recording do not start automatically at boot.",
                 color = settings.colors.muted, style = MaterialTheme.typography.bodySmall)
         }

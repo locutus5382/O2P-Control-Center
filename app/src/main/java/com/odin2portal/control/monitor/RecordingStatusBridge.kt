@@ -22,6 +22,9 @@ class RecordingStatusProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        // Explicit export only. Never run smaps/PSS measurement on the 1.5s UI
+        // status poll or while a game is launching.
+        if (method == METHOD_PROCESS_MEMORY) return ProcessMemoryMetrics.capture()
         if (method != METHOD_SNAPSHOT) return super.call(method, arg, extras)
         val app = context ?: return Bundle().apply {
             putString(KEY_ERROR, "Recording provider context unavailable")
@@ -59,6 +62,7 @@ class RecordingStatusProvider : ContentProvider() {
 
     companion object {
         const val METHOD_SNAPSHOT = "status"
+        const val METHOD_PROCESS_MEMORY = "memory-on-demand"
         const val KEY_ERROR = "error"
     }
 }
@@ -134,6 +138,18 @@ object RecordingStatusBridge {
         appendLine("Recent lifecycle events:")
         if (status.lifecycleEvents.isEmpty()) appendLine("(none reported)")
         else status.lifecycleEvents.forEach(::appendLine)
+        appendLine()
+        appendLine("O2P RAM FOOTPRINT (ON-DEMAND SNAPSHOT)")
+        append(ProcessMemoryMetrics.describe("Main app / Quick Settings process:",
+            ProcessMemoryMetrics.capture()))
+        val remote = try {
+            val uri = Uri.parse("content://" + context.packageName + ".monitor.status")
+            context.contentResolver.call(uri,
+                RecordingStatusProvider.METHOD_PROCESS_MEMORY, null, null)
+        } catch (_: Exception) { null }
+        append(ProcessMemoryMetrics.describe("Dedicated :monitor process:", remote))
+        appendLine("These figures are instantaneous, not samples at the time of a prior crash.")
+        appendLine("PSS is the best initial per-process comparison; RSS includes shared pages.")
         append(ProcessExitDiagnostics.report(context))
     }
 }

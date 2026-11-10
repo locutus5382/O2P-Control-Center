@@ -36,19 +36,29 @@ import java.util.Locale
  * old on-screen sampler. The UI never writes kernel settings or requires root.
  */
 @Composable
-fun GameplayPanel(
-    appearance: AppearanceSettings,
-    onBegin: () -> Unit,
-    sampleMs: Long,
-    recordMs: Long,
-    manualLabel: String
-) {
+fun GameplayPanel(appearance: AppearanceSettings) {
     val context = LocalContext.current
     val lifecycleOwner = context as? LifecycleOwner
     val scope = rememberCoroutineScope()
     val db = remember(context) { GameSessionStore(context.applicationContext) }
     val detector = remember(context) { ForegroundAppDetector(context.applicationContext) }
     val status by GameplayRuntime.state.collectAsState()
+    // Both the main app and Quick Settings use these saved intervals.
+    // Changing configuration never starts another sensor collector.
+    val sessionPrefs = remember(context) {
+        context.applicationContext.getSharedPreferences("monitor", 0)
+    }
+    var sampleMs by remember { mutableLongStateOf(
+        sessionPrefs.getLong("interval", 2000L)
+            .takeIf { it in listOf(1000L, 2000L, 5000L) } ?: 2000L
+    ) }
+    var recordMs by remember { mutableLongStateOf(
+        sessionPrefs.getLong("history_interval", RecordingIntervals.defaultMs)
+            .takeIf(RecordingIntervals::valid) ?: RecordingIntervals.defaultMs
+    ) }
+    var manualLabel by remember {
+        mutableStateOf(sessionPrefs.getString("session_label", "")?.take(64) ?: "")
+    }
 
     var permissionGranted by remember { mutableStateOf(detector.hasUsageAccess()) }
     var notificationGranted by remember {
@@ -123,6 +133,43 @@ fun GameplayPanel(
 
     O2PColumns(left = {
         O2PPanel(appearance) {
+            Text("SESSION CONFIGURATION", style = MaterialTheme.typography.titleMedium)
+            Text("One collector runs only after Start Session. No live telemetry polling while idle.",
+                color = appearance.colors.muted, style = MaterialTheme.typography.bodySmall)
+            Text("Telemetry sample interval", color = appearance.colors.muted)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(1000L to "1s", 2000L to "2s", 5000L to "5s").forEach { (ms, label) ->
+                    O2PAction(label, appearance, Modifier.weight(1f),
+                        enabled = !status.running && !status.starting, primary = sampleMs == ms) {
+                        sampleMs = ms
+                        sessionPrefs.edit().putLong("interval", ms).apply()
+                    }
+                }
+            }
+            Text("Saved history aggregation", color = appearance.colors.muted)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(5000L to "5s", 10000L to "10s",
+                    30000L to "30s", 120000L to "2m").forEach { (ms, label) ->
+                    O2PAction(label, appearance, Modifier.weight(1f),
+                        enabled = !status.running && !status.starting, primary = recordMs == ms) {
+                        recordMs = ms
+                        sessionPrefs.edit().putLong("history_interval", ms).apply()
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = manualLabel, onValueChange = {
+                    if (!status.running && !status.starting) {
+                        manualLabel = it.take(64)
+                        sessionPrefs.edit().putString("session_label", manualLabel).apply()
+                    }
+                },
+                enabled = !status.running && !status.starting,
+                singleLine = true, label = { Text("Session label (optional)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        O2PPanel(appearance) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("GAMEPLAY RECORDER", style = MaterialTheme.typography.titleMedium)
@@ -156,7 +203,6 @@ fun GameplayPanel(
             } else {
                 O2PAction("Start gameplay session", appearance, Modifier.fillMaxWidth(),
                     primary = true, enabled = notificationGranted) {
-                    onBegin()
                     try {
                         val intent = Intent(context, GameplayMonitorService::class.java)
                             .setAction(GameplayMonitorService.ACTION_START)
@@ -170,8 +216,8 @@ fun GameplayPanel(
                     }
                 }
             }
-            QuickTileInstallActions(appearance, session = true)
-            Text("Select live and history intervals in Monitor before starting.",
+            QuickTileInstallActions(appearance)
+            Text("The Quick Settings tile starts or stops the same recorder using the saved session configuration.",
                 style = MaterialTheme.typography.bodySmall,
                 color = appearance.colors.muted)
             val journal = remember { SessionReliabilityJournal(context.applicationContext) }
