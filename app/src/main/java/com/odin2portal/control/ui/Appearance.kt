@@ -155,6 +155,9 @@ class AppearanceSettings(context: Context) {
         private set
     var lightSweep by mutableStateOf(preferences.getBoolean("light_sweep", true))
         private set
+    // Opt-in. The owner's preferred classic-glass look remains the default.
+    var ambientBackdrop by mutableStateOf(preferences.getBoolean("ambient_backdrop", false))
+        private set
 
     val accent: AccentOption get() = O2P_ACCENTS.firstOrNull {
         it.id == if (style == VisualStyle.GLASS) glassAccentId else materialAccentId
@@ -193,6 +196,10 @@ class AppearanceSettings(context: Context) {
     fun setSweep(value: Boolean) {
         lightSweep = value
         preferences.edit().putBoolean("light_sweep", value).apply()
+    }
+    fun updateAmbientBackdrop(value: Boolean) {
+        ambientBackdrop = value
+        preferences.edit().putBoolean("ambient_backdrop", value).apply()
     }
 }
 
@@ -251,7 +258,9 @@ fun O2PBackdrop(settings: AppearanceSettings, content: @Composable BoxScope.() -
     ) {
         // Lightweight color-scattered glow; no realtime blur, GPU-heavy shaders,
         // or floating overlay during gameplay.
-        if (settings.style == VisualStyle.GLASS) {
+        if (settings.ambientBackdrop) {
+            OriginalAmbientBackdrop(settings)
+        } else if (settings.style == VisualStyle.GLASS) {
             Canvas(Modifier.matchParentSize()) {
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -286,10 +295,15 @@ fun O2PPanel(
     val c = settings.colors
     val glass = settings.style == VisualStyle.GLASS
     val shape = RoundedCornerShape(if (glass) 20.dp else 14.dp)
+    // Rich backdrop mode shows more of the artwork. All original fills and
+    // 720-ms button sweeps are unchanged when the optional switch is OFF.
+    val panelOpacity = if (glass && settings.ambientBackdrop)
+        (settings.glassOpacity - 0.075f).coerceIn(0.52f, 0.92f)
+    else settings.glassOpacity
     val fill = if (glass) Brush.linearGradient(
         listOf(
-            c.panel.copy(alpha = settings.glassOpacity),
-            c.panelAlt.copy(alpha = (settings.glassOpacity + 0.06f).coerceAtMost(1f))
+            c.panel.copy(alpha = panelOpacity),
+            c.panelAlt.copy(alpha = (panelOpacity + 0.06f).coerceAtMost(1f))
         )
     ) else Brush.linearGradient(listOf(c.panel, c.panel))
     val rim = if (glass) Brush.linearGradient(
