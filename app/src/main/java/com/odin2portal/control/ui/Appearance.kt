@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
@@ -316,7 +318,29 @@ fun O2PPanel(
     }
 }
 
-/** Tactile button: scale on press and a diagonal specular highlight on click. */
+/**
+ * The original liquid-glass button: softly translucent fill and a 720ms
+ * diagonal specular sweep on tap. Preserve the original background/panel
+ * palette and tactile motion; no rotating/perimeter animation or heavy shadow.
+ * Primary foreground is selected against the painted gradient stops instead
+ * of a raw accent luminance cutoff (pastel colorways need dark text).
+ */
+internal fun classicGlassReadableText(stops: List<Color>, panel: Color, canvas: Color): Color {
+    val surfaces = stops.flatMap { stop ->
+        listOf(stop.compositeOver(panel), stop.compositeOver(canvas))
+    }
+    val whiteMin = surfaces.minOf { surface ->
+        val l = surface.luminance()
+        (1.0f + 0.05f) / (l + 0.05f)
+    }
+    val blackMin = surfaces.minOf { surface ->
+        val l = surface.luminance()
+        (l + 0.05f) / 0.05f
+    }
+    return if (blackMin >= whiteMin) Color.Black else Color.White
+}
+
+/** Tactile button: original diagonal glass sweep on press. */
 @Composable
 fun O2PAction(
     label: String,
@@ -341,14 +365,13 @@ fun O2PAction(
     val shape = RoundedCornerShape(if (glass) 13.dp else 10.dp)
     val rimPulse = (1f - kotlin.math.abs(progress.value - 0.25f) / 1.2f).coerceIn(0f, 1f)
     val solid = if (primary) c.accent else c.panelAlt
-    val text = if (primary) c.onAccent else c.ink
-    val fill = if (glass) Brush.linearGradient(
-        listOf(
-            if (primary) lerp(solid, Color.White, if (c.light) 0.08f else 0.15f)
-            else c.panelAlt.copy(alpha = 0.82f),
-            solid.copy(alpha = if (primary) 0.89f else 0.73f)
-        )
-    ) else Brush.linearGradient(listOf(solid, solid))
+    val fillStops = if (glass) listOf(
+        if (primary) lerp(solid, Color.White, if (c.light) 0.08f else 0.15f)
+        else c.panelAlt.copy(alpha = 0.82f),
+        solid.copy(alpha = if (primary) 0.89f else 0.73f)
+    ) else listOf(solid, solid)
+    val text = if (primary) classicGlassReadableText(fillStops, c.panel, c.canvas) else c.ink
+    val fill = Brush.linearGradient(fillStops)
     Box(
         modifier = modifier
             .heightIn(min = 38.dp)
@@ -360,7 +383,7 @@ fun O2PAction(
             .clip(shape)
             .background(fill)
             .border(
-                if (focused) 2.dp else 0.8.dp,
+                if (focused) 2.4.dp else if (glass) 1.25.dp else 1.0.dp,
                 if (focused) c.accent else if (glass) {
                     if (primary) Color.White.copy(alpha = 0.40f + rimPulse * 0.42f)
                     else c.outline.copy(alpha = (c.outline.alpha + rimPulse * 0.40f).coerceAtMost(1f))
@@ -368,7 +391,10 @@ fun O2PAction(
                 shape
             )
             .onFocusChanged { focused = it.isFocused }
-            .clickable(interactionSource = interaction, indication = null, enabled = enabled) {
+            .clickable(
+                interactionSource = interaction,
+                indication = null, enabled = enabled, role = Role.Button
+            ) {
                 if (glass && settings.lightSweep) {
                     scope.launch {
                         progress.stop()
