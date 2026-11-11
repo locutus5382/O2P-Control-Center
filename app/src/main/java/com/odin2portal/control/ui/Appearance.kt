@@ -182,8 +182,12 @@ class AppearanceSettings(context: Context) {
             preferences.edit().putString("material_accent", id).apply()
         }
     }
+    // Updating the glass preview is immediate; disk persistence is delayed
+    // until the user finishes sliding, not performed at each drag tick.
     fun setOpacity(value: Float) {
         glassOpacity = value.coerceIn(0.58f, 0.96f)
+    }
+    fun persistOpacity() {
         preferences.edit().putFloat("glass_opacity", glassOpacity).apply()
     }
     fun setSweep(value: Boolean) {
