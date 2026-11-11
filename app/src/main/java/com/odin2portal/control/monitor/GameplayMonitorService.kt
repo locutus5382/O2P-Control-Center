@@ -127,8 +127,13 @@ class GameplayMonitorService : Service() {
         }
         if (intent?.action == ACTION_STOP) {
             journal.stopRequested()
-            hudOverlay.hide()
             stopping = true
+            hudOverlay.hide()
+            val hudAfterStop = hudOverlay.diagnosticStatus()
+            GameplayRuntime.update(GameplayRuntime.state.value.copy(
+                hudDiagnostic = hudAfterStop
+            ))
+            journal.event("HUD_STOP_REQUEST", hudAfterStop)
             job?.cancel() ?: run {
                 GameplayRuntime.update(GameplayStatus(message = "Recording stopped"))
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -344,13 +349,22 @@ class GameplayMonitorService : Service() {
                     } catch (e: Exception) {
                         error = "Unable to save completed session: " + (e.message ?: "storage error")
                     } finally {
+                        // Remove the actual overlay BEFORE publishing the terminal
+                        // status. Otherwise the bridge exports the previous
+                        // "Window attached" string after a normal Stop.
+                        val hudAfterCleanup = withContext(Dispatchers.Main.immediate) {
+                            hudOverlay.hide()
+                            hudOverlay.diagnosticStatus()
+                        }
                         val current = GameplayRuntime.state.value
                         GameplayRuntime.update(current.copy(
                             running = false, starting = false,
+                            latestSample = null,
+                            hudDiagnostic = hudAfterCleanup,
                             intervalsSaved = (history.rowCount.toLong() + history.droppedRows).toInt(),
                             message = error ?: "Session stopped; history saved on device"
                         ))
-                        withContext(Dispatchers.Main.immediate) { hudOverlay.hide() }
+                        journal.event("HUD_SESSION_FINALIZED", hudAfterCleanup)
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         QuickTileUpdates.refresh(applicationContext)
                         stopSelf()
@@ -429,6 +443,9 @@ class GameplayMonitorService : Service() {
             if (stopping) "Stop requested" else "Service destroyed while active=" +
                 (job?.isActive == true))
         hudOverlay.hide()
+        GameplayRuntime.update(GameplayRuntime.state.value.copy(
+            hudDiagnostic = hudOverlay.diagnosticStatus()
+        ))
         job?.cancel()
         scope.cancel()
         val running = job
