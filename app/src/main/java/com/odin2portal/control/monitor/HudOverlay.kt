@@ -232,6 +232,8 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
         readout = null
         headerText = null
         dragging = false
-        lastError = null
+        // Keep a genuine earlier HUD rendering error available to Diagnostics.
+        // Only clear the detach error after a later removal succeeds.
+        if (lastError?.startsWith("HUD detach failed:") == true) lastError = null
     }
 }
