@@ -13,6 +13,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -611,7 +613,11 @@ private fun AppearancePage(settings: AppearanceSettings) {
                     row.forEach { swatch ->
                         Column(
                             modifier = Modifier.weight(1f)
-                                .clickable { settings.selectAccent(swatch.id) }
+                                .selectable(
+                                    selected = settings.accent.id == swatch.id,
+                                    role = Role.RadioButton,
+                                    onClick = { settings.selectAccent(swatch.id) }
+                                )
                                 .padding(vertical = 3.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -633,6 +639,7 @@ private fun AppearancePage(settings: AppearanceSettings) {
                 Text("Glass clarity  ·  " + (settings.glassOpacity * 100).toInt() + "%",
                     style = MaterialTheme.typography.labelLarge)
                 Slider(value = settings.glassOpacity, onValueChange = settings::setOpacity,
+                    onValueChangeFinished = settings::persistOpacity,
                     valueRange = 0.58f..0.96f)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Light sweep on touch", Modifier.weight(1f),
