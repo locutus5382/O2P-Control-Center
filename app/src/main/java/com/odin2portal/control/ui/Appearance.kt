@@ -93,6 +93,38 @@ internal fun readableActionText(backgrounds: List<Color>): Color {
     return if (darkMinimum >= lightMinimum) dark else light
 }
 
+/**
+ * Keep emphasized color fills nearly opaque and subtle enough that the
+ * text chosen for the darkest/lightest gradient stop remains readable.
+ * The visual depth mainly comes from the border, interior glint and shadow.
+ */
+internal fun actionFillStops(
+    solid: Color, colors: O2PColors,
+    glass: Boolean, emphasized: Boolean, pressed: Boolean
+): List<Color> = when {
+    glass && emphasized -> listOf(
+        lerp(solid, Color.White, 0.025f).copy(alpha = 0.995f),
+        solid.copy(alpha = 0.99f),
+        solid.copy(alpha = 0.99f)
+    )
+    glass -> listOf(
+        lerp(solid, Color.White, if (colors.light) 0.18f else 0.14f)
+            .copy(alpha = 0.91f),
+        solid.copy(alpha = 0.84f),
+        lerp(solid, colors.canvas, 0.13f).copy(alpha = 0.96f)
+    )
+    emphasized -> listOf(lerp(solid, Color.White, 0.03f), solid)
+    pressed -> listOf(lerp(solid, colors.canvas, 0.11f), solid)
+    else -> listOf(lerp(solid, Color.White, if (colors.light) 0.10f else 0.09f),
+        lerp(solid, colors.canvas, 0.065f))
+}
+
+internal fun effectiveActionBackgrounds(
+    stops: List<Color>, colors: O2PColors
+): List<Color> = stops.flatMap { stop ->
+    listOf(stop.compositeOver(colors.panel), stop.compositeOver(colors.canvas))
+}
+
 data class O2PColors(
     val accent: Color,
     val ink: Color,
@@ -403,19 +435,10 @@ fun O2PAction(
         c.light -> Color(0xFF40536B)
         else -> Color(0xFFBBCDE6)
     }
-    val fillStops = if (glass) listOf(
-        lerp(solid, Color.White, if (c.light) 0.18f else 0.14f)
-            .copy(alpha = if (primary || destructive) .99f else .91f),
-        solid.copy(alpha = if (primary || destructive) .94f else .84f),
-        lerp(solid, c.canvas, 0.13f).copy(alpha = .96f)
-    ) else if (pressed) listOf(lerp(solid, c.canvas, .11f), solid)
-    else listOf(lerp(solid, Color.White, if (c.light) .10f else .09f),
-        lerp(solid, c.canvas, .065f))
+    val fillStops = actionFillStops(solid, c, glass, primary || destructive, pressed)
     // Consider the actual translucent button against both panel and canvas;
     // choosing from accent luminance alone incorrectly yields white on pastels.
-    val possibleBackgrounds = fillStops.flatMap { stop ->
-        listOf(stop.compositeOver(c.panel), stop.compositeOver(c.canvas))
-    }
+    val possibleBackgrounds = effectiveActionBackgrounds(fillStops, c)
     val textColor = readableActionText(possibleBackgrounds)
     val fill: Brush = if (glass) Brush.linearGradient(fillStops)
         else Brush.verticalGradient(fillStops)
