@@ -1,7 +1,7 @@
 package com.odin2portal.control.ui
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.matchParentSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -70,7 +70,7 @@ internal fun OriginalAmbientBackdrop(settings: AppearanceSettings) {
     val palette = ambientPalette(settings.family, c.accent)
 
     Box(
-        Modifier.matchParentSize().drawWithCache {
+        Modifier.fillMaxSize().drawWithCache {
             val w = size.width
             val h = size.height
             val radius = size.minDimension.coerceAtLeast(1f)
