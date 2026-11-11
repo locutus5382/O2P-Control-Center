@@ -207,7 +207,8 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
         val view = container ?: return lastError ?: "Overlay window not attached"
         val lp = params
         return if (view.isAttachedToWindow && lp != null) {
-            "Window attached at (" + lp.x + "," + lp.y + ")" +
+            (lastError?.let { it + " · " } ?: "") +
+                "Window attached at (" + lp.x + "," + lp.y + ")" +
                 ", " + view.width + "x" + view.height +
                 ". Actual visibility above games cannot be verified by Android."
         } else lastError ?: "Overlay window not attached"
@@ -215,11 +216,24 @@ class HudOverlay(private val context: Context, private val settings: HudPreferen
 
     fun hide() {
         val view = container
+        if (view != null) {
+            val failure = runCatching { wm.removeViewImmediate(view) }.exceptionOrNull()
+            if (failure != null && view.isAttachedToWindow) {
+                // Do not pretend the HUD was removed after WindowManager
+                // refused removal. Preserve the reference for the service's
+                // final cleanup retry, and export the real failure.
+                lastError = "HUD detach failed: " + failure.javaClass.simpleName +
+                    ": " + (failure.message ?: "window still attached").take(100)
+                return
+            }
+        }
         container = null
         params = null
         readout = null
         headerText = null
         dragging = false
-        if (view != null) runCatching { wm.removeViewImmediate(view) }
+        // Keep a genuine earlier HUD rendering error available to Diagnostics.
+        // Only clear the detach error after a later removal succeeds.
+        if (lastError?.startsWith("HUD detach failed:") == true) lastError = null
     }
 }
