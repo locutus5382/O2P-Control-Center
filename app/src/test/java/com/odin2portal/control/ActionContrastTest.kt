@@ -31,7 +31,7 @@ class ActionContrastTest {
     }
 
     @Test fun destructiveButtonRetainsAaContrastInAllThemes() {
-        val danger = Color(0xFFC74956)
+        val danger = Color(0xFFB52B40)
         for (family in ThemeFamily.entries) {
             val colors = makeO2PColors("red", family)
             val glass = family != ThemeFamily.DECKY
