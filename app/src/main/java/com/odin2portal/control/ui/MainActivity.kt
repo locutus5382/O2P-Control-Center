@@ -640,7 +640,7 @@ private fun AppearancePage(settings: AppearanceSettings) {
                     style = MaterialTheme.typography.bodyMedium)
                 Switch(
                     checked = settings.ambientBackdrop,
-                    onCheckedChange = settings::setAmbientBackdrop
+                    onCheckedChange = settings::updateAmbientBackdrop
                 )
             }
             Text("Optional static light-mesh artwork for Glass; precision grid for Decky. " +
