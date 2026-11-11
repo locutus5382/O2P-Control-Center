@@ -13,6 +13,10 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -611,7 +615,13 @@ private fun AppearancePage(settings: AppearanceSettings) {
                     row.forEach { swatch ->
                         Column(
                             modifier = Modifier.weight(1f)
-                                .clickable { settings.selectAccent(swatch.id) }
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                .semantics { contentDescription = swatch.label + " color" }
+                                .selectable(
+                                    selected = settings.accent.id == swatch.id,
+                                    role = Role.RadioButton,
+                                    onClick = { settings.selectAccent(swatch.id) }
+                                )
                                 .padding(vertical = 3.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -630,10 +640,17 @@ private fun AppearancePage(settings: AppearanceSettings) {
             }
             if (settings.style == VisualStyle.GLASS) {
                 HorizontalDivider(color = settings.colors.outline)
-                Text("Glass clarity  ·  " + (settings.glassOpacity * 100).toInt() + "%",
+                Text("Panel opacity  ·  " + (settings.glassOpacity * 100).toInt() + "%",
                     style = MaterialTheme.typography.labelLarge)
-                Slider(value = settings.glassOpacity, onValueChange = settings::setOpacity,
-                    valueRange = 0.58f..0.96f)
+                Slider(
+                    value = settings.glassOpacity,
+                    onValueChange = settings::setOpacity,
+                    onValueChangeFinished = settings::persistOpacity,
+                    valueRange = 0.58f..0.96f
+                )
+                Text("Adjusts glass panels; buttons retain independent high-contrast fills.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = settings.colors.muted)
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Animated press-outline (all themes)", Modifier.weight(1f),

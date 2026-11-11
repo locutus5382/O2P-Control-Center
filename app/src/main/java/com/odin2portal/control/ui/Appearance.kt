@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
@@ -74,6 +76,55 @@ val O2P_ACCENTS = listOf(
     AccentOption("dark_orange", "Dark orange", Color(0xFFBC612B))
 )
 
+/** WCAG contrast, computed after translucent paint is composited onto a panel. */
+internal fun contrastRatio(foreground: Color, background: Color): Float {
+    val a = foreground.luminance()
+    val b = background.luminance()
+    return (maxOf(a, b) + 0.05f) / (minOf(a, b) + 0.05f)
+}
+
+/** Choose the text color with the stronger *worst-case* contrast across gradient stops. */
+internal fun readableActionText(backgrounds: List<Color>): Color {
+    val light = Color.White
+    val dark = Color.Black
+    if (backgrounds.isEmpty()) return light
+    val lightMinimum = backgrounds.minOf { contrastRatio(light, it) }
+    val darkMinimum = backgrounds.minOf { contrastRatio(dark, it) }
+    return if (darkMinimum >= lightMinimum) dark else light
+}
+
+/**
+ * Keep emphasized color fills nearly opaque and subtle enough that the
+ * text chosen for the darkest/lightest gradient stop remains readable.
+ * The visual depth mainly comes from the border, interior glint and shadow.
+ */
+internal fun actionFillStops(
+    solid: Color, colors: O2PColors,
+    glass: Boolean, emphasized: Boolean, pressed: Boolean
+): List<Color> = when {
+    glass && emphasized -> listOf(
+        lerp(solid, Color.White, 0.025f).copy(alpha = 0.995f),
+        solid.copy(alpha = 0.99f),
+        solid.copy(alpha = 0.99f)
+    )
+    glass -> listOf(
+        lerp(solid, Color.White, if (colors.light) 0.18f else 0.14f)
+            .copy(alpha = 0.91f),
+        solid.copy(alpha = 0.84f),
+        lerp(solid, colors.canvas, 0.13f).copy(alpha = 0.96f)
+    )
+    emphasized -> listOf(lerp(solid, Color.White, 0.03f), solid)
+    pressed -> listOf(lerp(solid, colors.canvas, 0.11f), solid)
+    else -> listOf(lerp(solid, Color.White, if (colors.light) 0.10f else 0.09f),
+        lerp(solid, colors.canvas, 0.065f))
+}
+
+internal fun effectiveActionBackgrounds(
+    stops: List<Color>, colors: O2PColors
+): List<Color> = stops.flatMap { stop ->
+    listOf(stop.compositeOver(colors.panel), stop.compositeOver(colors.canvas))
+}
+
 data class O2PColors(
     val accent: Color,
     val ink: Color,
@@ -93,7 +144,8 @@ private val brightThemes = setOf(
 )
 
 fun makeO2PColors(id: String, family: ThemeFamily = ThemeFamily.OBSIDIAN): O2PColors {
-    val swatch = O2P_ACCENTS.firstOrNull { it.id == id } ?: O2P_ACCENTS[5]
+    val swatch = O2P_ACCENTS.firstOrNull { it.id == id }
+        ?: O2P_ACCENTS.first { it.id == "light_blue" }
     val accent = swatch.color
     val light = family == ThemeFamily.AERO
     val baseCanvas = when (family) {
@@ -135,7 +187,7 @@ fun makeO2PColors(id: String, family: ThemeFamily = ThemeFamily.OBSIDIAN): O2PCo
         outline = if (light) Color(0xFF26374D).copy(alpha = 0.37f)
                   else if (family == ThemeFamily.DECKY) Color.White.copy(alpha = 0.34f)
                   else Color.White.copy(alpha = 0.40f),
-        onAccent = if (accent.luminance() >= 0.46f) Color(0xFF111827) else Color.White,
+        onAccent = readableActionText(listOf(accent)),
         light = light
     )
 }
@@ -187,8 +239,12 @@ class AppearanceSettings(context: Context) {
             preferences.edit().putString("material_accent", id).apply()
         }
     }
+    // Slider updates the UI instantly but writes to SharedPreferences only once
+    // when the drag (or a keyboard step) completes.
     fun setOpacity(value: Float) {
         glassOpacity = value.coerceIn(0.58f, 0.96f)
+    }
+    fun persistOpacity() {
         preferences.edit().putFloat("glass_opacity", glassOpacity).apply()
     }
     fun setSweep(value: Boolean) {
@@ -364,16 +420,11 @@ fun O2PAction(
     val shape = RoundedCornerShape(if (glass) 14.dp else 11.dp)
     // Information hierarchy: only primary/selected actions carry a solid
     // accent. Ordinary actions keep legible, lightly textured surfaces.
-    val danger = Color(0xFFC74956)
+    val danger = Color(0xFFB52B40)
     val solid = when {
         destructive -> danger
         primary -> c.accent
         else -> c.panelAlt
-    }
-    val textColor = when {
-        destructive -> Color.White
-        primary -> c.onAccent
-        else -> c.ink
     }
     val rim = when {
         !enabled -> c.outline
@@ -384,28 +435,18 @@ fun O2PAction(
         c.light -> Color(0xFF40536B)
         else -> Color(0xFFBBCDE6)
     }
-    val fill: Brush = if (glass) {
-        Brush.linearGradient(
-            listOf(
-                lerp(solid, Color.White, if (c.light) 0.18f else 0.14f)
-                    .copy(alpha = if (primary || destructive) .99f else .91f),
-                solid.copy(alpha = if (primary || destructive) .94f else .84f),
-                lerp(solid, c.canvas, 0.13f).copy(alpha = .96f)
-            )
-        )
-    } else {
-        // A modest highlight and lower shadow rather than low-contrast
-        // monochrome neumorphism, which obscures button boundaries.
-        Brush.verticalGradient(
-            if (pressed) listOf(lerp(solid, c.canvas, .11f), solid)
-            else listOf(lerp(solid, Color.White, if (c.light) .10f else .09f),
-                lerp(solid, c.canvas, .065f))
-        )
-    }
+    val fillStops = actionFillStops(solid, c, glass, primary || destructive, pressed)
+    // Consider the actual translucent button against both panel and canvas;
+    // choosing from accent luminance alone incorrectly yields white on pastels.
+    val possibleBackgrounds = effectiveActionBackgrounds(fillStops, c)
+    val textColor = readableActionText(possibleBackgrounds)
+    val fill: Brush = if (glass) Brush.linearGradient(fillStops)
+        else Brush.verticalGradient(fillStops)
 
     Box(
         modifier = modifier
-            .heightIn(min = 46.dp)
+            .heightIn(min = 48.dp)
+            .widthIn(min = 48.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -431,7 +472,10 @@ fun O2PAction(
                 shape
             )
             .onFocusChanged { focused = it.isFocused }
-            .clickable(interactionSource = interaction, indication = null, enabled = enabled) {
+            .clickable(
+                interactionSource = interaction, indication = null,
+                enabled = enabled, role = Role.Button
+            ) {
                 if (settings.lightSweep) {
                     scope.launch {
                         orbit.stop()
