@@ -197,7 +197,7 @@ class AppearanceSettings(context: Context) {
         lightSweep = value
         preferences.edit().putBoolean("light_sweep", value).apply()
     }
-    fun setAmbientBackdrop(value: Boolean) {
+    fun updateAmbientBackdrop(value: Boolean) {
         ambientBackdrop = value
         preferences.edit().putBoolean("ambient_backdrop", value).apply()
     }
