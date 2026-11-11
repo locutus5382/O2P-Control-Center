@@ -634,6 +634,19 @@ private fun AppearancePage(settings: AppearanceSettings) {
                     }
                 }
             }
+            HorizontalDivider(color = settings.colors.outline)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Original ambient backgrounds", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = settings.ambientBackdrop,
+                    onCheckedChange = settings::setAmbientBackdrop
+                )
+            }
+            Text("Optional static light-mesh artwork for Glass; precision grid for Decky. " +
+                "No extra sensor sampling or animations. Turn off to restore the classic background.",
+                style = MaterialTheme.typography.labelSmall,
+                color = settings.colors.muted)
             if (settings.style == VisualStyle.GLASS) {
                 HorizontalDivider(color = settings.colors.outline)
                 Text("Glass clarity  ·  " + (settings.glassOpacity * 100).toInt() + "%",
