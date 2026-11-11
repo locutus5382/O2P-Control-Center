@@ -420,7 +420,7 @@ fun O2PAction(
     val shape = RoundedCornerShape(if (glass) 14.dp else 11.dp)
     // Information hierarchy: only primary/selected actions carry a solid
     // accent. Ordinary actions keep legible, lightly textured surfaces.
-    val danger = Color(0xFFC74956)
+    val danger = Color(0xFFB52B40)
     val solid = when {
         destructive -> danger
         primary -> c.accent
